@@ -113,7 +113,7 @@ if __name__ == "__main__":
     if not train:
         continue_training = True
 
-    data_path = 'data/training_data_medium_with_leak/network_'
+    data_path = 'data/net_2/training_data_with_leak/network_'
     load_string = 'model_weights/AE_leak_medium_network'
     save_string = 'model_weights/AE_leak_medium_network'
 
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     data_loader_params = {
          'batch_size': 64,
          'shuffle': True,
-         'num_workers': 16,
+         'num_workers': 2,
          'drop_last': True
     }
     dataloader = torch.utils.data.DataLoader(dataset, **data_loader_params)
@@ -302,8 +302,8 @@ if __name__ == "__main__":
 
     ######################################################################################################################
 
-    plot = False
-    case_list = range(100, 200)
+    plot = True
+    case_list = range(0, 10)
     counter = 0
     n = 10
 
@@ -369,7 +369,7 @@ if __name__ == "__main__":
             edges_list.append(edge_idx)
         error = []
 
-        ray.init(num_cpus=30)
+        ray.init(num_cpus=5)
 
         log_MAP = []
         p_y_given_c = []
@@ -484,16 +484,19 @@ if __name__ == "__main__":
                                                 edge_labels={(edges[0], edges[1]): 'X'},
                                                  font_color='tab:green', font_size=20,
                                                  bbox={'alpha':0.0})
-
-            nx.draw_networkx(G=G, pos=pos, edges=G.edges(), edge_min=log_MAP_min, edge_max=log_MAP_max,
-                               edge_color=log_MAP, edge_cmap=log_MAP_cmap, width=2,
-                             node_size=10, node_color=head, node_cmap=node_cmap,
-                             with_labels=False)
-
+            
+            nx.draw_networkx(
+                G=G, pos=pos, 
+                edge_vmin=log_MAP_min, edge_vmax=log_MAP_max,
+                edge_color=log_MAP, edge_cmap=log_MAP_cmap, width=2,
+                node_size=10, node_color=head, #node_cmap=node_cmap,
+                with_labels=False
+                )
+            
             node_sensor_labels = {node: 'O' for node in obs_node_labels}
             nx.draw_networkx_labels(G=G, pos=pos,
-                                     labels=node_sensor_labels,
-                                     font_color='tab:blue', font_size=20)
+                                    labels=node_sensor_labels,
+                                    font_color='tab:blue', font_size=20)
 
             error_dict = {}
 

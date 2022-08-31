@@ -7,7 +7,6 @@ import networkx as nx
 import copy
 import pandas as pd
 import matplotlib.pyplot as plt
-from utils.graph_utils import get_incidence_mat, incidence_to_adjacency, get_edge_lists
 from scipy.optimize import newton, curve_fit
 
 
@@ -144,28 +143,27 @@ def simulate_WDN(demands, leak, wn):
 
 if __name__ == "__main__":
 
-    train_data = False
+    net = 2
+    train_data = True
     with_leak = True
-    num_samples = 1000
+    num_samples = 10
 
     if train_data:
         if with_leak:
-            data_save_path = f'../data/training_data_medium_with_leak/network_'
+            data_save_path = f'data/net_{net}/training_data_with_leak/network_'
         else:
-            data_save_path = f'../data/training_data_medium_no_leak/network_'
+            data_save_path = f'data/net_{net}/training_data_no_leak/network_'
     else:
         if with_leak:
-            data_save_path = f'../data/test_data_medium_with_leak/network_'
+            data_save_path = f'data/net_{net}/test_data_with_leak/network_'
         else:
-            data_save_path = f'../data/test_data_medium_no_leak/network_'
-
+            data_save_path = f'data/net_{net}/test_data_no_leak/network_'
     # Getting path for the input file
-    inputfiles_folder_name = '../Input_files_EPANET'
-    filename = 'medium_net.inp'
-    path_file = os.path.join(inputfiles_folder_name,filename)
+    inputfiles_folder_name = 'Input_files_EPANET'
+    filename = f'net_{net}.inp'
+    inp_file = os.path.join(inputfiles_folder_name,filename)
 
     # Reading the input file into EPANET
-    inp_file = path_file
     wn = wntr.network.WaterNetworkModel(inp_file)
     wn1 = wntr.network.WaterNetworkModel(inp_file)
 

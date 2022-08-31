@@ -1,0 +1,198 @@
+from email.mime import base
+import pdb
+from re import S
+
+import numpy as np
+import os
+import wntr
+import networkx as nx
+import copy
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import newton, curve_fit
+
+def get_demand_time_series_noise(t_start, t_end, t_step, base_value):
+
+    noise_std =  5e-2*base_value
+    demand_noise = np.random.normal(
+        loc=0,
+        scale=noise_std, 
+        size=int((t_end - t_start) / t_step)
+        )
+    return demand_noise
+
+
+def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
+
+    #wn.options.time.report_timestep = wn.options.time.report_timestep/10
+    #wn.options.time.hydraulic_timestep = wn.options.time.hydraulic_timestep/10
+    #wn.options.time.pattern_interpolation = True
+
+
+    duration = wn.options.time.duration
+    hydraulic_timestep = wn.options.time.hydraulic_timestep
+    pattern_timestep = wn.options.time.pattern_timestep
+    report_timestep = wn.options.time.report_timestep
+
+    for node_key in wn.nodes.junction_names:
+        base_value = wn.get_node(node_key).demand_timeseries_list[0].base_value
+        demand_noise = get_demand_time_series_noise(
+            t_start=0, 
+            t_end=duration,
+            t_step=pattern_timestep,
+            base_value=base_value
+            )
+        wn.add_pattern(node_key, demand_noise)
+        pat = wn.get_pattern(node_key)
+        wn.get_node(node_key).demand_timeseries_list.append((1., pat))
+    
+    if leak is not None:
+        wn_leak = copy.deepcopy(wn)
+
+        leak_start_time = 0#np.random.uniform(1,47)*3600
+        leak_pipe = leak['pipe']
+
+        pipe = wn.get_link(leak_pipe)
+        leak_diameter = pipe.diameter*leak['area']
+        leak_area=3.14159*(leak_diameter/2)**2
+
+        wn_leak = wntr.morph.link.split_pipe(wn_leak, leak_pipe, 'leak_pipe', 'leak_node')
+        leak_node = wn_leak.get_node('leak_node')
+        leak_node.add_leak(wn_leak, area=leak_area, start_time=leak_start_time)
+        # running epanet simulator
+
+        sim = wntr.sim.WNTRSimulator(wn_leak)
+    else:
+        #sim = wntr.sim.EpanetSimulator(wn)
+        sim = wntr.sim.WNTRSimulator(wn)
+
+    results = sim.run_sim()
+
+    nodes = ['101', '121', '259']
+    links = ['20', '40', '50']
+    
+    plt.figure(figsize=(24,8))
+    plt.subplot(1,3,1)
+    for node_id in nodes:
+        plt.plot(results.node['head'][node_id], linewidth=2, label=f'node {node_id}')
+    #plt.axvline(leak_start_time, color='k', label='Leak start')
+    plt.title('Head')
+    plt.legend()
+    plt.subplot(1,3,2)
+    for link_id in links:
+        plt.plot(results.link['flowrate'][link_id], linewidth=2, label=f'link {link_id}')
+    #plt.axvline(leak_start_time, color='k', label='Leak start')
+    plt.title('Flowrate')
+    plt.legend()
+    plt.subplot(1,3,3)
+    for node_id in nodes:
+        plt.plot(results.node['demand'][node_id], linewidth=2, label=f'node {node_id}')
+    #plt.axvline(leak_start_time, color='k', label='Leak start')
+    plt.title('Demand')
+    plt.legend()
+    plt.show()
+    pdb.set_trace()
+
+    G = wn.get_graph()
+    pipe_flowrates = copy.deepcopy(results.link['flowrate'])
+
+    if leak is not None:
+        leak['demand'] = results.node['leak_demand']['leak_node'][0]
+
+        pipe_flowrates[f'{leak_pipe}'] = 0.5 * (pipe_flowrates[f'{leak_pipe}']
+                                                + pipe_flowrates[f'leak_pipe'])
+        head_df = results.node['head'].drop('leak_node', axis=1)
+        demand_df = results.node['demand'].drop('leak_node', axis=1)
+    else:
+        head_df = results.node['head']
+        demand_df = results.node['demand']
+
+    flowrate_df = results.link['flowrate'].drop('leak_pipe', axis=1)
+
+    if leak is not None:
+        leak['start_time'] = leak_start_time
+
+    pos = {}
+    for i in range(1, 33):
+        pos[i] = nx.get_node_attributes(G, 'pos')[str(i)]
+
+    if leak is not None:
+        result_dict = {'WNTR_results': results,
+                       'graph': G,
+                       'head': head_df,
+                       'demand': demand_df,
+                       'flow_rate': flowrate_df,
+                       'leak': leak}
+    else:
+        result_dict = {'WNTR_results': results,
+                       'graph': G,
+                       'head': head_df,
+                       'demand': demand_df,
+                       'flow_rate': flowrate_df}
+
+
+    nx.write_gpickle(result_dict, f'{data_save_path}{id}')
+
+
+if __name__ == "__main__":
+
+
+    net = 2
+    train_data = False
+    with_leak = True
+    num_samples = 1000
+
+    if train_data:
+        if with_leak:
+            data_save_path = f'data/dynamic_net_{net}/training_data_with_leak/network_'
+        else:
+            data_save_path = f'data/dynamic_net_{net}/training_data_no_leak/network_'
+    else:
+        if with_leak:
+            data_save_path = f'data/dynamic_net_{net}/test_data_with_leak/network_'
+        else:
+            data_save_path = f'data/dynamic_net_{net}/test_data_no_leak/network_'
+
+    # Getting path for the input file
+    inputfiles_folder_name = 'Input_files_EPANET'
+    filename = f'net_{net}.inp'
+    inp_file = os.path.join(inputfiles_folder_name,filename)
+
+    # Reading the input file into EPANET
+    wn = wntr.network.WaterNetworkModel(inp_file)
+
+    # store no of nodes and links
+    node_list = wn.node_name_list
+    link_list = wn.link_name_list
+
+    num_nodes = len(node_list)
+    num_links = len(link_list)
+
+    pump_list = wn.pump_name_list
+    link_list = [link for link in link_list if link not in pump_list]
+
+    sample_ids = range(0,num_samples)
+    if with_leak:
+        leak_pipes_id = np.random.randint(low=1, high=len(link_list), size=num_samples)
+        leak_pipes = [link_list[i] for i in leak_pipes_id]
+        leak_areas = np.random.uniform(low=0.01, high=0.1, size=num_samples)
+        for id, leak_pipe, leak_area in zip(sample_ids, leak_pipes, leak_areas):
+            result_dict_leak = simulate_WDN(
+                wn=wn,
+                leak={'pipe': leak_pipe,
+                      'area': leak_area},
+                )
+            nx.write_gpickle(result_dict_leak, f'{data_save_path}{id}')
+
+            if id % 100 == 0:
+                print(id)
+
+    else:
+        for id in sample_ids:
+            result_dict = simulate_WDN(
+                wn=wn,
+                )
+            nx.write_gpickle(result_dict, f'{data_save_path}{id}')
+
+            if id % 100 == 0:
+                print(id)
