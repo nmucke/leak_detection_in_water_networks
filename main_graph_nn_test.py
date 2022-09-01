@@ -55,20 +55,17 @@ if __name__ == "__main__":
      adj_matrix = nx.adjacency_matrix(G)
      adj_matrix = adj_matrix.toarray()
 
-
-
      graph_NN_params = {
-        'in_node_features': 1, 
-        'out_node_features': 10, 
-        'in_edge_features': 1,
-        'out_edge_features': 10,
-        'adj_matrix': adj_matrix,
+        'in_features': 1, 
+        'out_features': 2, 
+        'hidden_features': 10, 
+        'graph': G,
         'num_heads': 3,
         'num_nodes': num_nodes,
-        'num_egdes': num_edges,
+        'num_edges': num_edges,
      }
 
-     graph_NN = graph_autoencoder.MultiHeadGraphAttention(**graph_NN_params)
+     graph_NN = graph_autoencoder.MultiHeadGraphAttentionLayer(**graph_NN_params)
 
      lol = graph_NN(X)
      pdb.set_trace()
