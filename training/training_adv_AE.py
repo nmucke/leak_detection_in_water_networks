@@ -15,7 +15,8 @@ class TrainAdversarialAE():
                  critic_optimizer,
                  with_adversarial_training,
                  latent_dim=32, n_critic=5, gamma=10, save_string='AdvAE',
-                 n_epochs=100, device='cpu'):
+                 n_epochs=100, L1_regu=None,
+                 device='cpu'):
 
         self.device = device
         self.encoder = encoder
@@ -57,6 +58,8 @@ class TrainAdversarialAE():
 
         self.reconstruction_loss_function = nn.MSELoss()
         self.critic_loss_function = nn.BCELoss()
+
+        self.L1_regu = L1_regu
 
     def train(self, dataloader, val_dataloader=None, patience=50):
         """Train adversarial autoencoder"""
@@ -155,7 +158,8 @@ class TrainAdversarialAE():
 
         pbar = tqdm(
                 enumerate(dataloader),
-                total=int(len(dataloader.dataset)/dataloader.batch_size)
+                total=int(len(dataloader.dataset)/dataloader.batch_size),
+                bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'
         )
         recon_loss = 0
 
@@ -256,6 +260,16 @@ class TrainAdversarialAE():
         loss_recon = self.reconstruction_loss_function(state_recon, real_state)
 
         loss = loss + loss_recon
+
+        if self.L1_regu is not None:
+            l1_regu_encoder = 0.
+            l1_regu_decoder = 0.
+            for param in self.encoder.parameters():
+                l1_regu_encoder += param.abs().sum()
+            for param in self.decoder.parameters():
+                l1_regu_decoder += param.abs().sum()
+
+            loss = loss + self.L1_regu*(l1_regu_encoder + l1_regu_decoder)
 
         self.enc_opt.zero_grad()
         self.dec_opt.zero_grad()

@@ -146,7 +146,7 @@ if __name__ == "__main__":
     net = 2
     train_data = True
     with_leak = True
-    num_samples = 10
+    num_samples = 5000
 
     if train_data:
         if with_leak:
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     std_dev[0] = base_demands[0]*0.05
     cov_mat = cov_mat_fixed(0.6, 0.0, num_nodes=len(junction_nodes))
 
-    sample_ids = range(0,num_samples)
+    sample_ids = range(0, num_samples)
     if with_leak:
         leak_pipes_id = np.random.randint(low=1, high=len(link_list), size=num_samples)
         leak_pipes = [link_list[i] for i in leak_pipes_id]

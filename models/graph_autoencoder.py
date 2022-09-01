@@ -386,6 +386,9 @@ class GraphEncoder(nn.Module):
             self.latent_dim,
             bias=False
             )
+        
+        self.normalize = nn.LayerNorm(latent_dim)
+
     def forward(self, x):
         x = self.dense_in(x.unsqueeze(-1))
         x = self.activation(x)
@@ -399,6 +402,7 @@ class GraphEncoder(nn.Module):
         x = self.dense1(x)
         x = self.activation(x)
         x = self.dense2(x)
+        x = self.normalize(x)
 
         return x
 
@@ -411,6 +415,8 @@ class GraphDecoder(nn.Module):
         pivotal_nodes=None,
         num_attention_layers=1,
         attention_layer_params=None,
+        par_dim=1,
+        pars_embedding_dim=5
         ):
         super().__init__()
 
@@ -422,8 +428,13 @@ class GraphDecoder(nn.Module):
 
         self.activation = nn.LeakyReLU()
 
+        self.pars_embedding = nn.Embedding(
+                num_embeddings=par_dim,
+                embedding_dim=pars_embedding_dim
+        )
+
         self.dense_in1 = nn.Linear(
-            in_features=self.latent_dim,
+            in_features=self.latent_dim*2,
             out_features=self.latent_dim*2,
             bias=True
             )
@@ -450,7 +461,12 @@ class GraphDecoder(nn.Module):
             1,
             bias=False
             )
-    def forward(self, x):
+    def forward(self, x, pars):
+
+        pars = self.pars_embedding(pars[:, 0])
+
+        x = torch.cat((x, pars), dim=1)
+
         x = self.dense_in1(x)
         x = self.activation(x)
         x = self.dense_in2(x)
