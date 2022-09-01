@@ -55,17 +55,37 @@ if __name__ == "__main__":
      adj_matrix = nx.adjacency_matrix(G)
      adj_matrix = adj_matrix.toarray()
 
-     graph_NN_params = {
-        'in_features': 1, 
-        'out_features': 2, 
-        'hidden_features': 10, 
+     attention_layer_params = {
+        'in_features': 8, 
+        'out_features': 8, 
+        'hidden_features': 8, 
         'graph': G,
-        'num_heads': 3,
+        'num_heads': 2,
         'num_nodes': num_nodes,
         'num_edges': num_edges,
      }
 
-     graph_NN = graph_autoencoder.MultiHeadGraphAttentionLayer(**graph_NN_params)
+     pivotal_nodes = torch.randint(
+         low=0, 
+         high=10,
+         size=(10,)
+     )
+     graph_encoder_params = {
+        'latent_dim': 10,
+        'pivotal_nodes': pivotal_nodes,
+        'num_attention_layers': 2,
+        'attention_layer_params': attention_layer_params,
+     }
+     graph_decoder_params = {
+        'latent_dim': 10,
+        'pivotal_nodes': pivotal_nodes,
+        'num_attention_layers': 2,
+        'attention_layer_params': attention_layer_params,
+     }
 
-     lol = graph_NN(X)
-     pdb.set_trace()
+     graph_encoder = graph_autoencoder.GraphEncoder(**graph_encoder_params)
+     graph_decoder = graph_autoencoder.GraphDecoder(**graph_decoder_params)
+
+
+     lol = graph_encoder(X)
+     lol2 = graph_decoder(lol)

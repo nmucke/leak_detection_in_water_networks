@@ -127,8 +127,8 @@ class EdgeGraphAttention(nn.Module):
 
     def forward(self, x):
 
-        edges = x[:, 0:self.num_edges].unsqueeze(-1)
-        nodes = x[:, self.num_edges:].unsqueeze(-1)
+        edges = x[:, 0:self.num_edges]
+        nodes = x[:, self.num_edges:]
 
         #f = torch.matmul(edges, self.W_edge)
         #h = torch.matmul(nodes, self.W_node)
@@ -138,6 +138,7 @@ class EdgeGraphAttention(nn.Module):
         #f_out = torch.matmul(f_out, self.a).squeeze(-1) + self.bias_attention
         #f_out = self.leaky_relu(f_out)
         #alpha = self.softmax(f_out)
+
 
         f = self.dense_edge(edges)
         h = self.dense_node(nodes)
@@ -281,21 +282,22 @@ class MultiHeadGraphAttentionLayer(nn.Module):
 class GraphReduction(nn.Module):
     def __init__(
         self, 
-        num_pivotal_nodes=10,
+        pivotal_nodes=10,
         num_edges=10,
         num_nodes=10,
         ):
         super().__init__()
 
-        self.num_pivotal_nodes = num_pivotal_nodes
+        self.pivotal_nodes = pivotal_nodes
+        self.num_pivotal_nodes = len(pivotal_nodes)
         self.num_edges = num_edges
         self.num_nodes = num_nodes
 
-        self.pivotal_nodes = torch.randint(
-            low=0, 
-            high=self.num_pivotal_nodes,
-            size=(self.num_pivotal_nodes,)
-        )
+        #self.pivotal_nodes = torch.randint(
+        #    low=0, 
+        #    high=self.num_pivotal_nodes,
+        #    size=(self.num_pivotal_nodes,)
+        #)
     
     def forward(self, x):
         return x[:, self.num_edges + self.pivotal_nodes]
@@ -304,27 +306,164 @@ class GraphReduction(nn.Module):
 class GraphRecovery(nn.Module):
     def __init__(
         self, 
-        num_pivotal_nodes=10,
+        num_features=10,
+        pivotal_nodes=None,
+        num_edges=10,
+        num_nodes=10,
         ):
         super().__init__()
+
+        self.pivotal_nodes = pivotal_nodes
+        self.num_features = num_features
+        self.num_pivotal_nodes = len(pivotal_nodes)
+        self.num_edges = num_edges
+        self.num_nodes = num_nodes
+
+        '''
+        self.activation = nn.LeakyReLU()
+
+        self.dense1 = nn.Linear(
+            self.num_features, 
+            num_nodes + num_edges,
+            bias=True
+            )
+        self.dense2 = nn.Linear(
+            num_nodes + num_edges, 
+            num_nodes + num_edges,
+            bias=False
+            )
+        '''
+    
+    def forward(self, x):
+        
+        out = torch.zeros(x.shape[0], self.num_nodes + self.num_edges, self.num_features)
+        out[:, self.num_edges + self.pivotal_nodes, :] = x
+
+        return out
 
 
 class GraphEncoder(nn.Module):
     def __init__(
         self, 
         latent_dim=10,
-        num_pivotal_nodes=10,
+        pivotal_nodes=None,
         num_attention_layers=1,
         attention_layer_params=None,
         ):
         super().__init__()
 
+        self.latent_dim = latent_dim
+        self.pivotal_nodes = pivotal_nodes
+        self.num_pivotal_nodes = len(pivotal_nodes)
+        self.num_attention_layers = num_attention_layers
+        self.attention_layer_params = attention_layer_params
 
+        self.activation = nn.LeakyReLU()
+
+        self.dense_in = nn.Linear(
+            in_features=1,
+            out_features=attention_layer_params['in_features'],
+            bias=True
+            )
+
+        self.attention_layers = nn.ModuleList()
+        for i in range(self.num_attention_layers):
+            self.attention_layers.append(
+                MultiHeadGraphAttentionLayer(**attention_layer_params)
+                )
+        self.graph_reduction = GraphReduction(
+            pivotal_nodes=self.pivotal_nodes,
+            num_edges=attention_layer_params['num_edges'],
+            num_nodes=attention_layer_params['num_nodes'],
+            )
+        self.dense1 = nn.Linear(
+            self.num_pivotal_nodes*attention_layer_params['out_features'], 
+            self.latent_dim*2,
+            bias=True
+            )
+        self.dense2 = nn.Linear(
+            self.latent_dim*2, 
+            self.latent_dim,
+            bias=False
+            )
     def forward(self, x):
+        x = self.dense_in(x.unsqueeze(-1))
+        x = self.activation(x)
+        for attention_layer in self.attention_layers:
+            x = attention_layer(x)
+
+        x = self.graph_reduction(x)
+        
+        x = x.view(-1, self.num_pivotal_nodes*self.attention_layer_params['out_features'])
+
+        x = self.dense1(x)
+        x = self.activation(x)
+        x = self.dense2(x)
+
         return x
 
 
 
+class GraphDecoder(nn.Module):
+    def __init__(
+        self, 
+        latent_dim=10,
+        pivotal_nodes=None,
+        num_attention_layers=1,
+        attention_layer_params=None,
+        ):
+        super().__init__()
+
+        self.latent_dim = latent_dim
+        self.pivotal_nodes = pivotal_nodes
+        self.num_pivotal_nodes = len(pivotal_nodes)
+        self.num_attention_layers = num_attention_layers
+        self.attention_layer_params = attention_layer_params
+
+        self.activation = nn.LeakyReLU()
+
+        self.dense_in1 = nn.Linear(
+            in_features=self.latent_dim,
+            out_features=self.latent_dim*2,
+            bias=True
+            )
+        self.dense_in2 = nn.Linear(
+            in_features=self.latent_dim*2,
+            out_features=self.num_pivotal_nodes*attention_layer_params['out_features'],
+            bias=True
+            )
+
+        self.graph_recovery = GraphRecovery(
+            num_features=attention_layer_params['out_features'],
+            pivotal_nodes=pivotal_nodes,
+            num_edges=attention_layer_params['num_edges'],
+            num_nodes=attention_layer_params['num_nodes'],
+            )
+
+        self.attention_layers = nn.ModuleList()
+        for i in range(self.num_attention_layers):
+            self.attention_layers.append(
+                MultiHeadGraphAttentionLayer(**attention_layer_params)
+                )
+        self.dense_out = nn.Linear(
+            attention_layer_params['out_features'], 
+            1,
+            bias=False
+            )
+    def forward(self, x):
+        x = self.dense_in1(x)
+        x = self.activation(x)
+        x = self.dense_in2(x)
+        x = x.view(-1, self.num_pivotal_nodes, self.attention_layer_params['out_features'])
+
+        x = self.graph_recovery(x)
+
+        for attention_layer in self.attention_layers:
+            x = attention_layer(x)
+
+        x = self.dense_out(x)
+
+        return x.squeeze(-1)
 
         
 
