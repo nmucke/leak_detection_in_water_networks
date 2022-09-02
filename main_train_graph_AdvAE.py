@@ -34,7 +34,7 @@ def compute_leak_location_posterior(
     posterior = variational_inference.compute_p_y_given_c(
             observations=observation_operator.get_observations(true_state),
             pars=pars,
-            num_samples=100000,
+            num_samples=20000,
     )
 
     return posterior
@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
     small_demand_variance = False
 
-    train = True
+    train = False
     continue_training = False
     if not train:
         continue_training = True
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     else:
         sensors = None
 
-    latent_dim = 16
+    latent_dim = 8
     activation = nn.LeakyReLU()
 
     with open(transformer_load_path, 'rb') as pickle_file:
@@ -143,13 +143,13 @@ if __name__ == "__main__":
 
     dataset_params = {
         'data_path': data_path,
-         'file_ids': range(300),
+         'file_ids': range(4000),
          'transformer': transformer,
          'sensors': sensors
     }
     val_dataset_params = {
         'data_path': data_path,
-         'file_ids': range(300, 400),
+         'file_ids': range(4000, 5000),
          'transformer': transformer,
          'sensors': sensors
     }
@@ -174,11 +174,12 @@ if __name__ == "__main__":
     G = data['graph']
     num_nodes = len(G.nodes)
     num_edges = len(G.edges)
+    pdb.set_trace()
 
     attention_layer_params = {
-        'in_features': 4, 
-        'out_features': 4, 
-        'hidden_features': 4, 
+        'in_features': 8, 
+        'out_features': 8, 
+        'hidden_features': 8, 
         'graph': G,
         'num_heads': 2,
         'num_nodes': num_nodes,
@@ -193,13 +194,13 @@ if __name__ == "__main__":
     graph_encoder_params = {
         'latent_dim': latent_dim,
         'pivotal_nodes': pivotal_nodes,
-        'num_attention_layers': 2,
+        'num_attention_layers': 1,
         'attention_layer_params': attention_layer_params,
     }
     graph_decoder_params = {
         'latent_dim': latent_dim,
         'pivotal_nodes': pivotal_nodes,
-        'num_attention_layers': 8,
+        'num_attention_layers': 1,
         'attention_layer_params': attention_layer_params,
         'par_dim': par_dim,
         'pars_embedding_dim': latent_dim
@@ -215,7 +216,7 @@ if __name__ == "__main__":
     critic = graph_autoencoder.Critic(**critic_params).to(device)
 
     recon_learning_rate = 1e-3
-    recon_weight_decay = 1e-10
+    recon_weight_decay = 1e-8
 
     critic_learning_rate = 1e-2
 
@@ -241,7 +242,7 @@ if __name__ == "__main__":
                        'n_epochs': 1000,
                        'save_string': save_string,
                        'with_adversarial_training': True,
-                       'L1_regu': 1e-5,
+                       'L1_regu': 1e-8,
                        'device': device}
 
     if continue_training:
@@ -325,7 +326,7 @@ if __name__ == "__main__":
     ######################################################################################################################
 
     plot = True
-    case_list = range(0, 10)
+    case_list = range(0, 2)
     counter = 0
     n = 10
 
@@ -391,7 +392,7 @@ if __name__ == "__main__":
             edges_list.append(edge_idx)
         error = []
 
-        ray.init(num_cpus=5)
+        ray.init(num_cpus=1)
 
         log_MAP = []
         p_y_given_c = []

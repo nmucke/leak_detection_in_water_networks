@@ -22,17 +22,16 @@ def get_demand_time_series_noise(t_start, t_end, t_step, base_value):
     return demand_noise
 
 
-def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
+def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
 
     #wn.options.time.report_timestep = wn.options.time.report_timestep/10
     #wn.options.time.hydraulic_timestep = wn.options.time.hydraulic_timestep/10
     #wn.options.time.pattern_interpolation = True
 
+    wn = wntr.network.WaterNetworkModel(inp_file)
 
     duration = wn.options.time.duration
-    hydraulic_timestep = wn.options.time.hydraulic_timestep
     pattern_timestep = wn.options.time.pattern_timestep
-    report_timestep = wn.options.time.report_timestep
 
     for node_key in wn.nodes.junction_names:
         base_value = wn.get_node(node_key).demand_timeseries_list[0].base_value
@@ -68,6 +67,7 @@ def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
 
     results = sim.run_sim()
 
+    '''
     nodes = ['101', '121', '259']
     links = ['20', '40', '50']
     
@@ -91,7 +91,7 @@ def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
     plt.title('Demand')
     plt.legend()
     plt.show()
-    pdb.set_trace()
+    '''
 
     G = wn.get_graph()
     pipe_flowrates = copy.deepcopy(results.link['flowrate'])
@@ -112,9 +112,12 @@ def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
     if leak is not None:
         leak['start_time'] = leak_start_time
 
+    '''
     pos = {}
-    for i in range(1, 33):
-        pos[i] = nx.get_node_attributes(G, 'pos')[str(i)]
+    for key in G.nodes:
+        pos[i] = nx.get_node_attributes(G, 'pos')[key]
+    pdb.set_trace()
+    '''
 
     if leak is not None:
         result_dict = {'WNTR_results': results,
@@ -130,17 +133,16 @@ def simulate_WDN(wn, leak=None, data_save_path=None, id=0):
                        'demand': demand_df,
                        'flow_rate': flowrate_df}
 
-
-    nx.write_gpickle(result_dict, f'{data_save_path}{id}')
+    return result_dict
 
 
 if __name__ == "__main__":
 
 
     net = 2
-    train_data = False
+    train_data = True
     with_leak = True
-    num_samples = 1000
+    num_samples = 3000
 
     if train_data:
         if with_leak:
@@ -178,7 +180,7 @@ if __name__ == "__main__":
         leak_areas = np.random.uniform(low=0.01, high=0.1, size=num_samples)
         for id, leak_pipe, leak_area in zip(sample_ids, leak_pipes, leak_areas):
             result_dict_leak = simulate_WDN(
-                wn=wn,
+                inp_file=inp_file,
                 leak={'pipe': leak_pipe,
                       'area': leak_area},
                 )
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     else:
         for id in sample_ids:
             result_dict = simulate_WDN(
-                wn=wn,
+                inp_file=inp_file,
                 )
             nx.write_gpickle(result_dict, f'{data_save_path}{id}')
 

@@ -108,12 +108,12 @@ if __name__ == "__main__":
 
     small_demand_variance = False
 
-    train = False
+    train = True
     continue_training = False
     if not train:
         continue_training = True
 
-    data_path = 'data/net_2/training_data_with_leak/network_'
+    data_path = 'data/dynamic_net_2/training_data_with_leak/network_'
     load_string = 'model_weights/AE_leak_medium_network'
     save_string = 'model_weights/AE_leak_medium_network'
 
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     else:
         sensors = None
 
-    latent_dim = 16
+    latent_dim = 4
     activation = nn.LeakyReLU()
 
     with open(transformer_load_path, 'rb') as pickle_file:
@@ -143,22 +143,21 @@ if __name__ == "__main__":
 
     dataset_params = {
         'data_path': data_path,
-         'file_ids': range(9000),
+         'file_ids': range(10),
          'transformer': transformer,
          'sensors': sensors
     }
     val_dataset_params = {
         'data_path': data_path,
-         'file_ids': range(9000, 10000),
+         'file_ids': range(0, 10),
          'transformer': transformer,
          'sensors': sensors
     }
-
     dataset = NetworkDataset(**dataset_params)
     val_dataset = NetworkDataset(**val_dataset_params)
 
     data_loader_params = {
-         'batch_size': 64,
+         'batch_size': 4,
          'shuffle': True,
          'num_workers': 2,
          'drop_last': True
@@ -167,8 +166,8 @@ if __name__ == "__main__":
     val_dataloader = torch.utils.data.DataLoader(val_dataset, **data_loader_params)
 
     net, pars = dataset.__getitem__(0)
-    state_dim = net.shape[0]
-    par_dim = num_pipe_sections#pars.shape[0]
+    state_dim = net.shape[1]
+    par_dim = (num_pipe_sections, 24)#pars.shape[0]
 
     encoder_params = {
         'state_dim': state_dim,
@@ -220,6 +219,7 @@ if __name__ == "__main__":
                        'n_epochs': 1000,
                        'save_string': save_string,
                        'with_adversarial_training': True,
+                       'L1_regu': 1e-8,
                        'device': device}
 
     if continue_training:

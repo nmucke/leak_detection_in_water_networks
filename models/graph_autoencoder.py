@@ -371,6 +371,38 @@ class GraphEncoder(nn.Module):
             self.attention_layers.append(
                 MultiHeadGraphAttentionLayer(**attention_layer_params)
                 )
+        
+        #self.dense_1 = nn.Linear(
+        #    in_features=(attention_layer_params['num_nodes']+attention_layer_params['out_edges'])*attention_layer_params['out_features'],
+        #    out_features=256,
+        #    bias=True
+        #    )
+        self.dense_2 = nn.Linear(
+            in_features=(attention_layer_params['num_nodes']+attention_layer_params['num_edges'])*attention_layer_params['out_features'],
+            out_features=128,
+            bias=True
+            )
+        self.dense_3 = nn.Linear(
+            in_features=128,
+            out_features=64,
+            bias=True
+            )
+        self.dense_4 = nn.Linear(
+            in_features=64,
+            out_features=32,
+            bias=True
+            )
+        self.dense_5 = nn.Linear(
+            in_features=32,
+            out_features=latent_dim,
+            bias=False
+            )
+        #self.batch_norm1 = nn.BatchNorm1d(256)
+        self.batch_norm2 = nn.BatchNorm1d(128)
+        self.batch_norm3 = nn.BatchNorm1d(64)
+        self.batch_norm4 = nn.BatchNorm1d(32)
+
+        '''
         self.graph_reduction = GraphReduction(
             pivotal_nodes=self.pivotal_nodes,
             num_edges=attention_layer_params['num_edges'],
@@ -386,6 +418,7 @@ class GraphEncoder(nn.Module):
             self.latent_dim,
             bias=False
             )
+        '''
         
         self.normalize = nn.LayerNorm(latent_dim)
 
@@ -395,6 +428,7 @@ class GraphEncoder(nn.Module):
         for attention_layer in self.attention_layers:
             x = attention_layer(x)
 
+        '''
         x = self.graph_reduction(x)
         
         x = x.view(-1, self.num_pivotal_nodes*self.attention_layer_params['out_features'])
@@ -402,9 +436,24 @@ class GraphEncoder(nn.Module):
         x = self.dense1(x)
         x = self.activation(x)
         x = self.dense2(x)
-        x = self.normalize(x)
+        '''
 
-        return x
+        x = x.view(-1, (self.attention_layer_params['num_nodes']+self.attention_layer_params['num_edges'])*self.attention_layer_params['out_features'])
+        #x = self.dense_1(x)
+        #x = self.activation(x)
+        #x = self.batch_norm1(x)
+        x = self.dense_2(x)
+        x = self.activation(x)
+        x = self.batch_norm2(x)
+        x = self.dense_3(x)
+        x = self.activation(x)
+        x = self.batch_norm3(x)
+        x = self.dense_4(x)
+        x = self.activation(x)
+        x = self.batch_norm4(x)
+        x = self.dense_5(x)
+        
+        return self.normalize(x)
 
 
 
@@ -432,7 +481,33 @@ class GraphDecoder(nn.Module):
                 num_embeddings=par_dim,
                 embedding_dim=pars_embedding_dim
         )
+        self.dense_1 = nn.Linear(
+            in_features=latent_dim+pars_embedding_dim,
+            out_features=32,
+            bias=True
+            )
+        self.dense_2 = nn.Linear(
+            in_features=32,
+            out_features=64,
+            bias=True
+            )
+        self.dense_3 = nn.Linear(
+            in_features=64,
+            out_features=128,
+            bias=True
+            )
+        self.dense_4 = nn.Linear(
+            in_features=128,
+            out_features=(self.attention_layer_params['num_nodes']+self.attention_layer_params['num_edges'])*self.attention_layer_params['out_features'],
+            bias=True
+            )
+        
+        self.batch_norm1 = nn.BatchNorm1d(32)
+        self.batch_norm2 = nn.BatchNorm1d(64)
+        self.batch_norm3 = nn.BatchNorm1d(128)
+        self.batch_norm4 = nn.BatchNorm1d((self.attention_layer_params['num_nodes']+self.attention_layer_params['num_edges'])*self.attention_layer_params['out_features'])
 
+        '''
         self.dense_in1 = nn.Linear(
             in_features=self.latent_dim*2,
             out_features=self.latent_dim*2,
@@ -450,7 +525,7 @@ class GraphDecoder(nn.Module):
             num_edges=attention_layer_params['num_edges'],
             num_nodes=attention_layer_params['num_nodes'],
             )
-
+        '''
         self.attention_layers = nn.ModuleList()
         for i in range(self.num_attention_layers):
             self.attention_layers.append(
@@ -466,13 +541,29 @@ class GraphDecoder(nn.Module):
         pars = self.pars_embedding(pars[:, 0])
 
         x = torch.cat((x, pars), dim=1)
+        x = self.dense_1(x)
+        x = self.activation(x)
+        x = self.batch_norm1(x)
+        x = self.dense_2(x)
+        x = self.activation(x)
+        x = self.batch_norm2(x)
+        x = self.dense_3(x)
+        x = self.activation(x)
+        x = self.batch_norm3(x)
+        x = self.dense_4(x)
+        x = self.activation(x)
+        x = self.batch_norm4(x)
+        x = x.view(-1, (self.attention_layer_params['num_nodes']+self.attention_layer_params['num_edges']), self.attention_layer_params['out_features'])
 
+
+        '''
         x = self.dense_in1(x)
         x = self.activation(x)
         x = self.dense_in2(x)
         x = x.view(-1, self.num_pivotal_nodes, self.attention_layer_params['out_features'])
 
         x = self.graph_recovery(x)
+        '''
 
         for attention_layer in self.attention_layers:
             x = attention_layer(x)

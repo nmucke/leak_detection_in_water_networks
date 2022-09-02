@@ -84,8 +84,18 @@ def simulate_WDN(demands, leak, wn):
     else:
         flow_rate = pipe_flowrates.to_numpy()[0:1, :].T
     flowrate_df = pd.DataFrame(data=flow_rate.T, columns=wn.link_name_list)
+    '''
+    G = wn.get_graph(link_weight=results.link['flowrate'].loc[3600,:], node_weight=results.node['head'].loc[3600,:])
+    colors = [G.nodes[n]['weight'] for n in G.nodes]
+    nx.draw(G, with_labels=True, node_color=colors)
+    nx.draw_networkx(
+        G=G, pos=nx.get_node_attributes(G, 'pos'), 
+        node_size=10, node_color=head, #node_cmap=node_cmap,
+        with_labels=False
+        )
 
-    G = wn.get_graph()
+    pdb.set_trace()
+    '''
 
     '''
     pos = {}

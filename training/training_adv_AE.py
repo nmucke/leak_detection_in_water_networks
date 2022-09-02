@@ -162,9 +162,22 @@ class TrainAdversarialAE():
                 bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'
         )
         recon_loss = 0
-
         for bidx, (real_state, real_pars) in pbar:
             self.iii = bidx
+
+            batch_size = real_state.size(0)
+            num_steps = real_state.size(1)
+            num_states = real_state.size(2)
+            num_pars = real_pars.size(2)  
+
+            real_state = real_state.reshape(
+                batch_size*num_steps,
+                num_states
+            )
+            real_pars = real_pars.reshape(
+                batch_size*num_steps,
+                num_pars
+            )
 
             real_state = real_state.to(self.device)
             real_pars = real_pars.to(self.device)
@@ -199,7 +212,6 @@ class TrainAdversarialAE():
         self.dec_opt_scheduler.step()
         if self.with_adversarial_training:
             self.cri_opt_scheduler.step()
-
 
         return recon_loss/(bidx+1), 1, 1,1#enc_loss, gp
 
@@ -318,6 +330,21 @@ class TrainAdversarialAE():
         self.decoder.eval()
         val_loss = 0
         for batch_idx, (state, pars) in enumerate(val_dataloader):
+
+            batch_size = state.size(0)
+            num_steps = state.size(1)
+            num_states = state.size(2)
+            num_pars = pars.size(2)  
+
+            state = state.reshape(
+                batch_size*num_steps,
+                num_states
+            )
+            pars = pars.reshape(
+                batch_size*num_steps,
+                num_pars
+            )
+
             state = state.to(self.device)
             pars = pars.to(self.device)
             val_loss += self.reconstruction_loss_function(

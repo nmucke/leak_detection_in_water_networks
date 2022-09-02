@@ -49,6 +49,7 @@ class Encoder(nn.Module):
         self.normalize = nn.LayerNorm(latent_dim)
 
     def forward(self, x):
+        
         x = self.dense_in(x)
         x = self.activation(x)
         x = self.batch_norm_in(x)
@@ -70,7 +71,7 @@ class Decoder(nn.Module):
             latent_dim=32,
             state_dim=128,
             hidden_neurons=[],
-            pars_dim=119,
+            pars_dim=(119),
             pars_embedding_dim=32
     ):
         super().__init__()
@@ -80,16 +81,20 @@ class Decoder(nn.Module):
         self.latent_dim = latent_dim
         self.pars_dim = pars_dim
 
-        self.pars_embedding = nn.Embedding(
-                num_embeddings=pars_dim,
-                embedding_dim=pars_embedding_dim
-        )
+        self.pars_embedding_layers = nn.ModuleList()
+        for i in range(len(self.pars_dim)):
+            self.pars_embedding_layers.append(
+                nn.Embedding(
+                    num_embeddings=pars_dim[i],
+                    embedding_dim=pars_embedding_dim
+                )
+            )
 
         self.dense_in = nn.Linear(in_features=latent_dim,
                               out_features=self.hidden_neurons[0])
         self.batch_norm_in = nn.BatchNorm1d(self.hidden_neurons[0])
 
-        self.hidden_neurons[0] += pars_embedding_dim
+        self.hidden_neurons[0] += pars_embedding_dim * len(self.pars_dim)
         self.dense_layers = nn.ModuleList(
                 [nn.Linear(
                         in_features=hidden_neurons[i],
@@ -111,8 +116,9 @@ class Decoder(nn.Module):
         x = self.dense_in(x)
         x = self.activation(x)
         x = self.batch_norm_in(x)
-
-        pars = self.pars_embedding(pars[:, 0])
+        pars = [emb_layer(pars[:, i])
+            for i, emb_layer in enumerate(self.pars_embedding_layers)]
+        pars = torch.cat(pars, 1)
 
         x = torch.cat((x, pars), dim=1)
 

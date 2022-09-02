@@ -41,7 +41,6 @@ class NetworkDataset(torch.utils.data.Dataset):
 
         self.sensors = sensors
 
-
         data_dict = nx.read_gpickle(self.data_path_state + str(0))
         self.pipe_label_to_index_dict = pipe_label_to_index(data_dict['flow_rate'])
 
@@ -60,11 +59,11 @@ class NetworkDataset(torch.utils.data.Dataset):
 
         data_dict = nx.read_gpickle(self.data_path_state + str(idx))
 
-        flow_rate = torch.tensor(data_dict['flow_rate'].values, dtype=self.dtype)[0]
-        head = torch.tensor(data_dict['head'].values, dtype=self.dtype)[0]
-        demand = torch.tensor(data_dict['demand'].values, dtype=self.dtype)[0]
+        flow_rate = torch.tensor(data_dict['flow_rate'].values, dtype=self.dtype)
+        head = torch.tensor(data_dict['head'].values, dtype=self.dtype)
+        demand = torch.tensor(data_dict['demand'].values, dtype=self.dtype)
 
-        data = torch.cat([flow_rate, head], dim=0)
+        data = torch.cat([flow_rate, head], dim=1)
 
         if self.transformer is not None:
             data = self.transform_state(data)
@@ -74,8 +73,8 @@ class NetworkDataset(torch.utils.data.Dataset):
             #pars[self.pipe_label_to_index_dict[data_dict['leak']['pipe']]] = 1
 
             pars = torch.tensor(
-                    [self.pipe_label_to_index_dict[data_dict['leak']['pipe']]],
-                    dtype=torch.int32
+                [self.pipe_label_to_index_dict[data_dict['leak']['pipe']]],
+                dtype=torch.int32
             )
 
         elif self.no_leak_classification:
@@ -98,23 +97,9 @@ class NetworkDataset(torch.utils.data.Dataset):
                         dtype=torch.int32
                 )
 
+        t = torch.tensor(data_dict['head'].index.to_numpy()/60/60 % 24, dtype=torch.int32)
+        pars = pars.repeat(t.shape[0])
+        
+        pars = torch.stack([pars, t], dim=1)
 
         return data, pars
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
