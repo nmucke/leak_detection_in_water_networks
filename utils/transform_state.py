@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.optim as optim
 import torch
+from data_handling.network_dataset import NetworkDataset
 
 class StateTransformer():
     def __init__(self, num_pipes, num_nodes):
@@ -41,7 +42,7 @@ class StateTransformer():
 
         flow_rate = (flow_rate - self.min_flow_rate) / (self.max_flow_rate - self.min_flow_rate)
         head = (head - self.min_head) / (self.max_head - self.min_head)
-
+        
         state = torch.cat((flow_rate, head), dim=1).squeeze(0)
         return state
 
@@ -54,3 +55,4 @@ class StateTransformer():
 
         state = torch.cat((flow_rate, head), dim=1).squeeze(0)
         return state
+

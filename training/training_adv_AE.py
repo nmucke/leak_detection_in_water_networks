@@ -168,7 +168,7 @@ class TrainAdversarialAE():
             batch_size = real_state.size(0)
             num_steps = real_state.size(1)
             num_states = real_state.size(2)
-            num_pars = real_pars.size(2)  
+            num_pars = real_pars.size(2) 
 
             real_state = real_state.reshape(
                 batch_size*num_steps,
@@ -181,6 +181,7 @@ class TrainAdversarialAE():
 
             real_state = real_state.to(self.device)
             real_pars = real_pars.to(self.device)
+
 
             if self.with_adversarial_training:
                 self.encoder.eval()

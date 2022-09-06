@@ -64,7 +64,7 @@ class NetworkDataset(torch.utils.data.Dataset):
         demand = torch.tensor(data_dict['demand'].values, dtype=self.dtype)
 
         data = torch.cat([flow_rate, head], dim=1)
-
+        
         if self.transformer is not None:
             data = self.transform_state(data)
 
@@ -99,7 +99,10 @@ class NetworkDataset(torch.utils.data.Dataset):
 
         t = torch.tensor(data_dict['head'].index.to_numpy()/60/60 % 24, dtype=torch.int32)
         pars = pars.repeat(t.shape[0])
+        #pars = pars.unsqueeze(0).repeat(2, 1)
+
+        
         
         pars = torch.stack([pars, t], dim=1)
 
-        return data, pars
+        return data, pars#.unsqueeze(1)

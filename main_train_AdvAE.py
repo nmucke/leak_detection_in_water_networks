@@ -1,3 +1,4 @@
+from cProfile import label
 import pdb
 import torch.nn as nn
 import torch
@@ -25,11 +26,14 @@ from torchquad import MonteCarlo, set_up_backend
 @ray.remote
 def compute_leak_location_posterior(
         leak_location,
+        time_stamp,
         true_state,
         variational_inference,
     ):
 
-    pars = torch.tensor([[leak_location]], dtype=torch.int32)
+    pars = torch.tensor([[leak_location, time_stamp]], dtype=torch.int32)
+    #pars = torch.tensor([[leak_location]], dtype=torch.int32)
+
 
     posterior = variational_inference.compute_p_y_given_c(
             observations=observation_operator.get_observations(true_state),
@@ -108,7 +112,7 @@ if __name__ == "__main__":
 
     small_demand_variance = False
 
-    train = True
+    train = False
     continue_training = False
     if not train:
         continue_training = True
@@ -129,8 +133,10 @@ if __name__ == "__main__":
 
         load_string = load_string + "_sensors"
         save_string = save_string + "_sensors"
-        sensors = {'flow_rate_sensors': flow_rate_sensor_ids,
-                   'head_sensors': head_sensor_ids}
+        sensors = {
+            'flow_rate_sensors': flow_rate_sensor_ids,
+            'head_sensors': head_sensor_ids
+            }
     else:
         sensors = None
 
@@ -143,13 +149,13 @@ if __name__ == "__main__":
 
     dataset_params = {
         'data_path': data_path,
-         'file_ids': range(10),
-         'transformer': transformer,
-         'sensors': sensors
+        'file_ids': range(9000),
+        'transformer': transformer,
+        'sensors': sensors
     }
     val_dataset_params = {
         'data_path': data_path,
-         'file_ids': range(0, 10),
+         'file_ids': range(9000, 10000),
          'transformer': transformer,
          'sensors': sensors
     }
@@ -159,7 +165,7 @@ if __name__ == "__main__":
     data_loader_params = {
          'batch_size': 4,
          'shuffle': True,
-         'num_workers': 2,
+         #'num_workers': 4,
          'drop_last': True
     }
     dataloader = torch.utils.data.DataLoader(dataset, **data_loader_params)
@@ -167,20 +173,20 @@ if __name__ == "__main__":
 
     net, pars = dataset.__getitem__(0)
     state_dim = net.shape[1]
-    par_dim = (num_pipe_sections, 24)#pars.shape[0]
+    par_dim = (num_pipe_sections, 24)#(num_pipe_sections, 24)#pars.shape[0]
 
     encoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [160, 128, 96, 64, 32],
+        'hidden_neurons': [64],
     }
 
     decoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [32, 64, 96, 128, 160],
+        'hidden_neurons': [64],
         'pars_dim': par_dim,
-        'pars_embedding_dim': latent_dim,
+        'pars_embedding_dim': latent_dim//2,
     }
 
     critic_params = {
@@ -200,12 +206,12 @@ if __name__ == "__main__":
     encoder_optimizer = torch.optim.Adam(
             encoder.parameters(),
             lr=recon_learning_rate,
-            weight_decay=recon_weight_decay
+            #weight_decay=recon_weight_decay
     )
     decoder_optimizer = torch.optim.Adam(
             decoder.parameters(),
             lr=recon_learning_rate,
-            weight_decay=recon_weight_decay
+            #weight_decay=recon_weight_decay
     )
     critic_optimizer = torch.optim.Adam(
             critic.parameters(),
@@ -219,7 +225,7 @@ if __name__ == "__main__":
                        'n_epochs': 1000,
                        'save_string': save_string,
                        'with_adversarial_training': True,
-                       'L1_regu': 1e-8,
+                       'L1_regu': None,#1e-6,
                        'device': device}
 
     if continue_training:
@@ -303,15 +309,23 @@ if __name__ == "__main__":
     ######################################################################################################################
 
     plot = True
-    case_list = range(0, 10)
+    case_list = range(10, 11)
     counter = 0
     n = 10
 
+    for i in range(10):
+        data_dict = nx.read_gpickle(data_path + str(i))
+        plt.plot(data_dict['flow_rate'].iloc[0], label=f'{data_dict["leak"]["pipe"]}')
+    plt.legend()
+    plt.show()
+
+    t1 = time.time()
     correct_leak_location_pred = []
     with_n_largest_log_MAP = []
     std_case_list = []
     for case in case_list:
         data_dict = nx.read_gpickle(data_path + str(case))
+        pdb.set_trace()
         G = data_dict['graph']
         pos = {}
         for i in data_dict['head'].keys():
@@ -323,20 +337,6 @@ if __name__ == "__main__":
                 node_labels=list(data_dict['head'].columns)
         )
 
-        flow_rate = np.asarray(data_dict['flow_rate'].values)[0]
-        head = np.asarray(data_dict['head'].values)[0]
-        head_dim = head.shape[0]
-        flow_rate_dim = flow_rate.shape[0]
-
-        true_state = np.concatenate((flow_rate, head), axis=0)
-        true_state = torch.from_numpy(true_state).float().to(device)
-        true_state = transformer.transform_state(true_state)
-
-        noise = torch.randn(true_state.shape).to(device)
-        noise = noise * 0.05
-
-        true_state = true_state + noise
-
         true_leak_location = data_dict['leak']['pipe']
 
         if with_sensors:
@@ -344,9 +344,9 @@ if __name__ == "__main__":
             obs_node_labels = [label_to_index.index_to_node_label_dict[i] for i in sensors['head_sensors']]
         else:
             #obs_pipe_labels = list(data_dict['flow_rate'].columns)[0:-1:5]
-            #obs_node_labels = list(data_dict['head'].columns)[0:-1:5]
+            obs_node_labels = list(data_dict['head'].columns)[0:-1:5]
             obs_pipe_labels = []
-            obs_node_labels = ['117', '143', '181', '213']
+            #obs_node_labels = ['117', '143', '181', '213']
 
         observation_operator = ObservationOperator(
                 pipe_labels=list(data_dict['flow_rate'].columns),
@@ -369,48 +369,110 @@ if __name__ == "__main__":
             edges_list.append(edge_idx)
         error = []
 
-        ray.init(num_cpus=5)
+        p_c = 1/num_pipe_sections
+        for t_idx in range(6, 7):
+            flow_rate = np.asarray(data_dict['flow_rate'].values)[t_idx:t_idx+1]
+            head = np.asarray(data_dict['head'].values)[t_idx:t_idx+1]
+            head_dim = head.shape[0]
+            flow_rate_dim = flow_rate.shape[0]
 
-        log_MAP = []
-        p_y_given_c = []
-        if HMC:
-            std_pipe_list = []
-        for iter, i in enumerate(edges_list):
-            posterior_val = compute_leak_location_posterior.remote(
-                    leak_location=i,
-                    true_state=true_state,
-                    variational_inference=variational_inference,
-                    )
-            p_y_given_c.append(posterior_val)
-            '''
+            true_state = np.concatenate((flow_rate, head), axis=1)
+            true_state = torch.from_numpy(true_state).float().to(device)
+            true_state = transformer.transform_state(true_state).unsqueeze(0)
 
+
+            pars1 = torch.tensor([[observation_operator.LabelToIndex.pipe_label_to_index_dict[true_leak_location], t_idx]])
+            pars2 = torch.tensor([[48, t_idx+6]])
+            z = encoder(true_state)
+            reconstructed_state1 = decoder(z[0:1], pars1)
+            reconstructed_state2 = decoder(z[0:1], pars2)
+            plt.figure()
+            plt.plot(reconstructed_state1[0].detach(), label='recon_1')
+            plt.plot(reconstructed_state2[0].detach(), label='recon_2')
+            plt.plot(true_state[0].detach(), label='True')
+            plt.legend()
+            plt.show()
+            pdb.set_trace()
+
+            noise = torch.randn(true_state.shape).to(device)
+            noise = noise * 0.05
+
+            true_state = true_state + noise
+
+            ray.init(num_cpus=5)
+
+            log_MAP = []
+            p_y_given_c = []
             if HMC:
-                out = compute_reconstruction_error.remote(
+                std_pipe_list = []
+            for iter, i in enumerate(edges_list):
+                posterior_val = compute_leak_location_posterior.remote(
+                        leak_location=i,
+                        time_stamp=t_idx,
+                        true_state=true_state,
+                        variational_inference=variational_inference,
+                        )
+                p_y_given_c.append(posterior_val)
+                '''
+
+
+                pars1 = torch.tensor([[i, t_idx]])
+                z = encoder(true_state)
+                reconstructed_state1 = decoder(z[0:1], pars1)
+                loss = nn.MSELoss()(reconstructed_state1, true_state)
+                
+                p_y_given_c.append(loss.detach().cpu().numpy())
+                '''
+
+
+                '''
+
+                if HMC:
+                    out = compute_reconstruction_error.remote(
+                            leak_location=i,
+                            true_state=true_state,
+                            variational_inference=variational_inference,
+                            variational_minumum=True,
+                            HMC=HMC
+                    )
+                    log_MAP.append(out)
+                else:
+                    e = compute_reconstruction_error.remote(
                         leak_location=i,
                         true_state=true_state,
                         variational_inference=variational_inference,
-                        variational_minumum=True,
-                        HMC=HMC
-                )
-                log_MAP.append(out)
-            else:
-                e = compute_reconstruction_error.remote(
-                    leak_location=i,
-                    true_state=true_state,
-                    variational_inference=variational_inference,
-                    variational_minumum=True
-                )
+                        variational_minumum=True
+                    )
 
-                log_MAP.append(e)
+                    log_MAP.append(e)
+                '''
+            #log_MAP = ray.get(log_MAP)
+            p_y_given_c = ray.get(p_y_given_c)
+            ray.shutdown()
+
             '''
-        #log_MAP = ray.get(log_MAP)
-        p_y_given_c = ray.get(p_y_given_c)
-        ray.shutdown()
+            for iter, i in enumerate(edges_list):
+                print(f'Case: {case}, Leak Location: {i}, Error: {p_y_given_c[iter]}')
 
-        p_y_given_c = np.asarray(p_y_given_c)
-        p_c = 1/p_y_given_c.shape[0]
-        p_y_given_c = p_y_given_c * p_c
-        p_c_given_y = p_y_given_c / np.sum(p_y_given_c)
+            #pdb.set_trace()
+            #lol = [observation_operator.LabelToIndex.pipe_label_to_index_dict[i] for i in edge]
+            plt.figure()
+            plt.semilogy(edges_list, p_y_given_c, '.')
+            plt.axvline(x=observation_operator.LabelToIndex.pipe_label_to_index_dict[true_leak_location], color='r')
+            plt.show()
+            pdb.set_trace()
+            '''
+
+
+
+            p_y_given_c = np.asarray(p_y_given_c)
+            #p_c = 1/p_y_given_c.shape[0]
+            p_y_given_c = p_y_given_c * p_c
+            p_c_given_y = p_y_given_c / np.sum(p_y_given_c)
+
+            p_c = p_c_given_y
+            print(np.max(p_c))
+            
 
 
 
@@ -531,6 +593,10 @@ if __name__ == "__main__":
         print(f'Case {counter} of {len(case_list)} done')
         print(f'Accuracy: {accuracy:0.2f}')
         print(f'Within {n} largest log MAP: {within_n_largest:0.2f}')
+
+    t2 = time.time()
+
+    print(f'Time taken: {t2-t1:0.2f}')
 
     accuracy = np.sum(correct_leak_location_pred)/len(correct_leak_location_pred)
     within_n_largest = np.sum(with_n_largest_log_MAP)/len(with_n_largest_log_MAP)

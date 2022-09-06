@@ -13,21 +13,21 @@ import pickle
 
 if __name__ == "__main__":
 
-    data_path = 'data/training_data_medium_with_leak/network_'
+    data_path = 'data/dynamic_net_2/training_data_with_leak/network_'
     save_path = 'medium_network_transformer'
 
     dataset_params = {
         'data_path': data_path,
-         'num_files': 10000,
-         'transformer': None,
+         'file_ids': range(2500),
+         'transformer': None,#transformer,
          'sensors': None
     }
     dataset = NetworkDataset(**dataset_params)
 
     data_loader_params = {
-         'batch_size': 256,
+         'batch_size': 4,
          'shuffle': True,
-         'num_workers': 12,
+         'num_workers': 2,
          'drop_last': True
     }
     dataloader = torch.utils.data.DataLoader(dataset, **data_loader_params)
@@ -40,6 +40,15 @@ if __name__ == "__main__":
     )
 
     for i, (state, _) in enumerate(dataloader):
+
+        batch_size = state.size(0)
+        num_steps = state.size(1)
+        num_states = state.size(2)
+
+        state = state.reshape(
+            batch_size*num_steps,
+            num_states
+            )
         transformer_state.partial_fit(state)
 
     fileObject = save_path + '.pkl'

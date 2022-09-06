@@ -52,8 +52,8 @@ def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
         leak_pipe = leak['pipe']
 
         pipe = wn.get_link(leak_pipe)
-        leak_diameter = pipe.diameter*leak['area']
-        leak_area=3.14159*(leak_diameter/2)**2
+        #leak_diameter = pipe.diameter*leak['area']
+        leak_area=leak['area']#3.14159*(leak_diameter/2)**2
 
         wn_leak = wntr.morph.link.split_pipe(wn_leak, leak_pipe, 'leak_pipe', 'leak_node')
         leak_node = wn_leak.get_node('leak_node')
@@ -142,7 +142,7 @@ if __name__ == "__main__":
     net = 2
     train_data = True
     with_leak = True
-    num_samples = 3000
+    num_samples = 10000
 
     if train_data:
         if with_leak:
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     # Getting path for the input file
     inputfiles_folder_name = 'Input_files_EPANET'
     filename = f'net_{net}.inp'
-    inp_file = os.path.join(inputfiles_folder_name,filename)
+    inp_file = os.path.join(inputfiles_folder_name, filename)
 
     # Reading the input file into EPANET
     wn = wntr.network.WaterNetworkModel(inp_file)
@@ -173,11 +173,11 @@ if __name__ == "__main__":
     pump_list = wn.pump_name_list
     link_list = [link for link in link_list if link not in pump_list]
 
-    sample_ids = range(0,num_samples)
+    sample_ids = range(0, num_samples)
     if with_leak:
         leak_pipes_id = np.random.randint(low=1, high=len(link_list), size=num_samples)
         leak_pipes = [link_list[i] for i in leak_pipes_id]
-        leak_areas = np.random.uniform(low=0.01, high=0.1, size=num_samples)
+        leak_areas = np.random.uniform(low=0.005, high=0.015, size=num_samples)
         for id, leak_pipe, leak_area in zip(sample_ids, leak_pipes, leak_areas):
             result_dict_leak = simulate_WDN(
                 inp_file=inp_file,
