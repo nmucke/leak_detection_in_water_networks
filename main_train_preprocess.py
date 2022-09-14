@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     dataset_params = {
         'data_path': data_path,
-         'file_ids': range(2500),
+         'file_ids': range(5000),
          'transformer': None,#transformer,
          'sensors': None
     }

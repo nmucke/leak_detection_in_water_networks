@@ -164,7 +164,7 @@ class Critic(nn.Module):
             x = self.activation(x)
 
         x = self.dense_out(x)
-        return self.sigmoid(x)
+        return x#self.sigmoid(x)
 
 class AutoEncoder():
     def __init__(self, latent_dim=32, input_dim=128,

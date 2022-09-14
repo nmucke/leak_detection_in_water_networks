@@ -142,7 +142,7 @@ if __name__ == "__main__":
     net = 2
     train_data = True
     with_leak = True
-    num_samples = 10000
+    num_samples = 20000
 
     if train_data:
         if with_leak:
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     pump_list = wn.pump_name_list
     link_list = [link for link in link_list if link not in pump_list]
 
-    sample_ids = range(0, num_samples)
+    sample_ids = range(10000, num_samples)
     if with_leak:
         leak_pipes_id = np.random.randint(low=1, high=len(link_list), size=num_samples)
         leak_pipes = [link_list[i] for i in leak_pipes_id]

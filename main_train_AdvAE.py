@@ -22,75 +22,9 @@ import pickle
 import ray
 import time
 from torchquad import MonteCarlo, set_up_backend
-
-@ray.remote
-def compute_leak_location_posterior(
-        leak_location,
-        time_stamp,
-        true_state,
-        variational_inference,
-    ):
-
-    pars = torch.tensor([[leak_location, time_stamp]], dtype=torch.int32)
-    #pars = torch.tensor([[leak_location]], dtype=torch.int32)
-
-
-    posterior = variational_inference.compute_p_y_given_c(
-            observations=observation_operator.get_observations(true_state),
-            pars=pars,
-            num_samples=100000,
-    )
-
-    return posterior
-
-
-
-@ray.remote
-def compute_reconstruction_error(
-        leak_location,
-        true_state,
-        variational_inference,
-        variational_minumum=True,
-        HMC=False
-    ):
-
-    pars = torch.tensor([[leak_location]], dtype=torch.int64)
-
-    if HMC:
-        reconstruction, reconstruction_std, latent_state, latent_std = \
-            variational_inference.compute_HMC_statistics(
-                observations=observation_operator.get_observations(true_state),
-                pars=torch.tensor([[i]], dtype=torch.int64),
-                num_samples=1000,
-        )
-        reconstruction = reconstruction.unsqueeze(0)
-        reconstruction_std = reconstruction_std.unsqueeze(0)
-        latent_state = latent_state.unsqueeze(0)
-
-    else:
-        if variational_minumum:
-            latent_state, reconstruction = variational_inference.compute_variational_minimum(
-                    observations=observation_operator.get_observations(true_state),
-                    pars=pars,
-                    num_iterations=2500
-            )
-        else:
-            latent_state, reconstruction = variational_inference.compute_encoder_decoder_reconstruction(
-                    true_state=true_state.unsqueeze(0),
-                    pars=pars,
-            )
-
-    log_posterior = variational_inference.log_posterior(
-            observations=observation_operator.get_observations(true_state),
-            predicted_observations=observation_operator.get_observations(reconstruction[0]),
-            latent_state=latent_state
-    )
-
-    if HMC:
-        return {'log_posterior': log_posterior,
-                'reconstruction_std': reconstruction_std}
-    else:
-        return log_posterior
+from scipy.special import rel_entr
+from scipy.stats import skew
+from scipy.stats import kurtosis
 
 
 if __name__ == "__main__":
@@ -106,20 +40,31 @@ if __name__ == "__main__":
         device = 'cpu'
     print(f'Training AdvAE on {device}')
 
+    convergence_plot = True
+    convergence_latent = [2, 4, 6, 8, 10, 12, 14, 16, 18]
+
+    latent_dim = 6
+
+    critic_regu = 1e-3
+    wasserstein = True
+
+    save_model = True
+    save_path = 'models_for_inference/AE_net2_latent' + str(latent_dim) + '_critic_regu' + str(critic_regu)
+    if wasserstein:
+        save_path += '_wasserstein'
 
     train_with_leak = True
     with_sensors = False
 
-    small_demand_variance = False
-
-    train = False
+    train = True
     continue_training = False
     if not train:
         continue_training = True
 
+
     data_path = 'data/dynamic_net_2/training_data_with_leak/network_'
-    load_string = 'model_weights/AE_leak_medium_network'
-    save_string = 'model_weights/AE_leak_medium_network'
+    load_string = 'model_weights/AE_net2_latent' + str(latent_dim)
+    save_string = 'model_weights/AE_net2_latent' + str(latent_dim)
 
     transformer_load_path = 'medium_network_transformer.pkl'
 
@@ -140,7 +85,6 @@ if __name__ == "__main__":
     else:
         sensors = None
 
-    latent_dim = 4
     activation = nn.LeakyReLU()
 
     with open(transformer_load_path, 'rb') as pickle_file:
@@ -163,7 +107,7 @@ if __name__ == "__main__":
     val_dataset = NetworkDataset(**val_dataset_params)
 
     data_loader_params = {
-         'batch_size': 4,
+         'batch_size': 8,
          'shuffle': True,
          #'num_workers': 4,
          'drop_last': True
@@ -178,20 +122,20 @@ if __name__ == "__main__":
     encoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [64],
+        'hidden_neurons': [160, 128, 96, 64, 32],
     }
 
     decoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [64],
+        'hidden_neurons': [32, 64, 96, 128, 160],
         'pars_dim': par_dim,
         'pars_embedding_dim': latent_dim//2,
     }
 
     critic_params = {
         'latent_dim': latent_dim,
-        'hidden_neurons': [32, 32],
+        'hidden_neurons': [64, 64],
     }
 
     encoder = autoencoder_models.Encoder(**encoder_params).to(device)
@@ -201,7 +145,7 @@ if __name__ == "__main__":
     recon_learning_rate = 1e-3
     recon_weight_decay = 1e-8
 
-    critic_learning_rate = 1e-2
+    critic_learning_rate = 1e-3
 
     encoder_optimizer = torch.optim.Adam(
             encoder.parameters(),
@@ -219,14 +163,18 @@ if __name__ == "__main__":
             weight_decay=recon_weight_decay
     )
 
-    training_params = {'latent_dim': latent_dim,
-                       'n_critic': 3,
-                       'gamma': 10,
-                       'n_epochs': 1000,
-                       'save_string': save_string,
-                       'with_adversarial_training': True,
-                       'L1_regu': None,#1e-6,
-                       'device': device}
+    training_params = {
+        'latent_dim': latent_dim,
+        'n_critic': 3,
+        'gamma': 10,
+        'n_epochs': 1000,
+        'save_string': save_string,
+        'with_adversarial_training': True,
+        'L1_regu': None,#1e-10,
+        'critic_regu': critic_regu,
+        'wasserstein': wasserstein,
+        'device': device
+        }
 
     if continue_training:
         load_checkpoint(
@@ -253,7 +201,7 @@ if __name__ == "__main__":
         recon_loss_list, critic_loss_list, enc_loss_list = trainer.train(
                 dataloader=dataloader,
                 val_dataloader=val_dataloader,
-                patience=50,
+                patience=10,
         )
 
     encoder = encoder.to('cpu')
@@ -262,344 +210,117 @@ if __name__ == "__main__":
     encoder.eval()
     decoder.eval()
 
-    '''
-    leak_location_pred = []
-    leak_location_true = []
-    for case in range(1000):
-        data_dict = nx.read_gpickle(data_path + str(case))
+    if save_model:
+        torch.save(encoder, save_path + '_encoder.pt')
+        torch.save(decoder, save_path + '_decoder.pt')
 
-        flow_rate = np.asarray(data_dict['flow_rate'].values)[0]
-        head = np.asarray(data_dict['head'].values)[0]
-        head_dim = head.shape[0]
-        flow_rate_dim = flow_rate.shape[0]
 
-        true_net, true_pars = dataset.__getitem__(case)
-        #true_net = true_net.detach().cpu().numpy()
-        true_pars = true_pars.detach().cpu().numpy()
+    ##### Convergence #####
 
-        leak_location = np.argwhere(true_pars == 1)[0][0]
-        leak_location_true.append(leak_location)
+    if convergence_plot:
+        true_moments = np.array([0, 1, 0, 3])
 
-        error = []
-        for i in range(par_dim):
-            pars = torch.zeros(par_dim)
-            pars[i] = 1
+        latent_recon_loss = []
+        latent_moment_error = []
+        for latent_dim in convergence_latent:
 
-            z = encoder(true_net.unsqueeze(0))
-            reconstructed_net = decoder(torch.cat((z, pars.unsqueeze(0)), dim=1))
-            reconstructed_net = reconstructed_net[0].detach().cpu().numpy()
+            load_string = 'models_for_inference/AE_net2_latent' + str(latent_dim) + '_critic_regu' + str(critic_regu)
+            if wasserstein:
+                load_string = load_string + '_wasserstein'
 
-            reconstructed_flow_rate = reconstructed_net[:flow_rate_dim]
-            reconstructed_head = reconstructed_net[-head_dim:]
+            recon_loss = []
+            latent_states = []
 
-            e_head = np.linalg.norm(reconstructed_head - head)/np.linalg.norm(head)
-            e_flow_rate = np.linalg.norm(reconstructed_flow_rate - flow_rate)/np.linalg.norm(flow_rate)
-            error.append(e_head + e_flow_rate)
+            encoder = torch.load(load_string + '_encoder.pt')
+            encoder.eval()
 
-        error = np.asarray(error)
+            decoder = torch.load(load_string + '_decoder.pt')
+            decoder.eval()
 
-        leak_location_pred.append(np.argmin(error))
+            for bidx, (real_state, real_pars) in enumerate(dataloader):
 
-    leak_location_pred = np.asarray(leak_location_pred)
-    leak_location_true = np.asarray(leak_location_true)
+                batch_size = real_state.size(0)
+                num_steps = real_state.size(1)
+                num_states = real_state.size(2)
+                num_pars = real_pars.size(2) 
 
-    print(f'Leak location prediction: {np.sum(leak_location_pred == leak_location_true)} of {len(leak_location_true)}')
-    '''
+                real_state = real_state.reshape(
+                    batch_size*num_steps,
+                    num_states
+                )
+                real_pars = real_pars.reshape(
+                    batch_size*num_steps,
+                    num_pars
+                )
 
-    ######################################################################################################################
+                real_state = real_state.to(device)
+                real_pars = real_pars.to(device)
 
-    plot = True
-    case_list = range(10, 11)
-    counter = 0
-    n = 10
+                latent = encoder(real_state)
+                recon_state = decoder(latent, real_pars)
 
-    for i in range(10):
-        data_dict = nx.read_gpickle(data_path + str(i))
-        plt.plot(data_dict['flow_rate'].iloc[0], label=f'{data_dict["leak"]["pipe"]}')
-    plt.legend()
+                latent_states.append(latent.detach().numpy())
+
+                recon_loss.append(
+                    nn.MSELoss()(recon_state, real_state).detach().numpy()
+                )
+
+                if bidx > 1000:
+                    break
+            
+            latent_recon_loss.append(np.mean(recon_loss))
+
+            latent_states = np.concatenate(latent_states, axis=0)
+
+            mean = np.mean(latent_states.flatten())
+            std = np.std(latent_states.flatten())
+            skewness = skew(latent_states.flatten())
+            kurt = kurtosis(latent_states.flatten())
+
+            moments = np.array([mean, std, skewness, kurt])
+            latent_moment_error.append(np.linalg.norm(moments - true_moments))
+
+        plt.figure(figsize=(10,5))
+        plt.subplot(1, 2, 1)
+        plt.semilogy(convergence_latent, latent_recon_loss, label='Reconstruction loss',
+                linestyle='-', linewidth=2, color='tab:blue')
+        plt.semilogy(convergence_latent, latent_recon_loss, '.', label='Reconstruction loss',
+                markersize=20, color='tab:blue')
+        plt.xlabel('Latent dimension')
+        plt.ylabel('MSE loss')
+        plt.legend()
+
+        plt.subplot(1, 2, 2)
+        plt.semilogy(convergence_latent, latent_moment_error, label='Moment error',
+                linestyle='-', linewidth=2, color='tab:blue')
+        plt.semilogy(convergence_latent, latent_moment_error, '.', label='Moment error',
+                markersize=20, color='tab:blue')
+        plt.xlabel('Latent dimension')
+        plt.ylabel('Moment error')
+        plt.legend()
+        plt.show()
+
+        print(latent_moment_error)
+
+    ##### Compute KL divergence #####
+
+    plt.figure(figsize=(10, 10))
+    num_plots = np.min([latent_dim, 9])
+    for i in range(num_plots):
+        plt.subplot(3, 3, i+1)
+        plt.hist(latent_states[:, i], bins=30)
+
+        mean = np.mean(latent_states[:, i])
+        std = np.std(latent_states[:, i])
+        skewness = skew(latent_states[:, i])
+        kurt = kurtosis(latent_states[:, i])
+
+        plt.title(
+            f'$\mu$={mean:.2f}, $\sigma$={std:.2f}, skew={skewness:.2f}, kurt={kurt:.2f}',
+            fontsize=8
+            )
     plt.show()
 
-    t1 = time.time()
-    correct_leak_location_pred = []
-    with_n_largest_log_MAP = []
-    std_case_list = []
-    for case in case_list:
-        data_dict = nx.read_gpickle(data_path + str(case))
-        pdb.set_trace()
-        G = data_dict['graph']
-        pos = {}
-        for i in data_dict['head'].keys():
-            pos[i] = nx.get_node_attributes(G, 'pos')[str(i)]
 
 
-        label_to_index = LabelToIndex(
-                pipe_labels=list(data_dict['flow_rate'].columns),
-                node_labels=list(data_dict['head'].columns)
-        )
-
-        true_leak_location = data_dict['leak']['pipe']
-
-        if with_sensors:
-            obs_pipe_labels = [label_to_index.index_to_pipe_label_dict[i] for i in sensors['flow_rate_sensors']]
-            obs_node_labels = [label_to_index.index_to_node_label_dict[i] for i in sensors['head_sensors']]
-        else:
-            #obs_pipe_labels = list(data_dict['flow_rate'].columns)[0:-1:5]
-            obs_node_labels = list(data_dict['head'].columns)[0:-1:5]
-            obs_pipe_labels = []
-            #obs_node_labels = ['117', '143', '181', '213']
-
-        observation_operator = ObservationOperator(
-                pipe_labels=list(data_dict['flow_rate'].columns),
-                node_labels=list(data_dict['head'].columns),
-                pipe_observation_labels=obs_pipe_labels,
-                node_observations_labels=obs_node_labels
-        )
-        if with_sensors:
-            true_state = observation_operator.get_observations(true_state)
-
-        variational_inference = VariationalInference(
-                observation_operator=observation_operator,
-                decoder=decoder,
-                encoder=encoder,
-        )
-
-        edges_list = []
-        for u, v, edge in G.edges:
-            edge_idx = observation_operator.LabelToIndex.pipe_label_to_index_dict[edge]
-            edges_list.append(edge_idx)
-        error = []
-
-        p_c = 1/num_pipe_sections
-        for t_idx in range(6, 7):
-            flow_rate = np.asarray(data_dict['flow_rate'].values)[t_idx:t_idx+1]
-            head = np.asarray(data_dict['head'].values)[t_idx:t_idx+1]
-            head_dim = head.shape[0]
-            flow_rate_dim = flow_rate.shape[0]
-
-            true_state = np.concatenate((flow_rate, head), axis=1)
-            true_state = torch.from_numpy(true_state).float().to(device)
-            true_state = transformer.transform_state(true_state).unsqueeze(0)
-
-
-            pars1 = torch.tensor([[observation_operator.LabelToIndex.pipe_label_to_index_dict[true_leak_location], t_idx]])
-            pars2 = torch.tensor([[48, t_idx+6]])
-            z = encoder(true_state)
-            reconstructed_state1 = decoder(z[0:1], pars1)
-            reconstructed_state2 = decoder(z[0:1], pars2)
-            plt.figure()
-            plt.plot(reconstructed_state1[0].detach(), label='recon_1')
-            plt.plot(reconstructed_state2[0].detach(), label='recon_2')
-            plt.plot(true_state[0].detach(), label='True')
-            plt.legend()
-            plt.show()
-            pdb.set_trace()
-
-            noise = torch.randn(true_state.shape).to(device)
-            noise = noise * 0.05
-
-            true_state = true_state + noise
-
-            ray.init(num_cpus=5)
-
-            log_MAP = []
-            p_y_given_c = []
-            if HMC:
-                std_pipe_list = []
-            for iter, i in enumerate(edges_list):
-                posterior_val = compute_leak_location_posterior.remote(
-                        leak_location=i,
-                        time_stamp=t_idx,
-                        true_state=true_state,
-                        variational_inference=variational_inference,
-                        )
-                p_y_given_c.append(posterior_val)
-                '''
-
-
-                pars1 = torch.tensor([[i, t_idx]])
-                z = encoder(true_state)
-                reconstructed_state1 = decoder(z[0:1], pars1)
-                loss = nn.MSELoss()(reconstructed_state1, true_state)
-                
-                p_y_given_c.append(loss.detach().cpu().numpy())
-                '''
-
-
-                '''
-
-                if HMC:
-                    out = compute_reconstruction_error.remote(
-                            leak_location=i,
-                            true_state=true_state,
-                            variational_inference=variational_inference,
-                            variational_minumum=True,
-                            HMC=HMC
-                    )
-                    log_MAP.append(out)
-                else:
-                    e = compute_reconstruction_error.remote(
-                        leak_location=i,
-                        true_state=true_state,
-                        variational_inference=variational_inference,
-                        variational_minumum=True
-                    )
-
-                    log_MAP.append(e)
-                '''
-            #log_MAP = ray.get(log_MAP)
-            p_y_given_c = ray.get(p_y_given_c)
-            ray.shutdown()
-
-            '''
-            for iter, i in enumerate(edges_list):
-                print(f'Case: {case}, Leak Location: {i}, Error: {p_y_given_c[iter]}')
-
-            #pdb.set_trace()
-            #lol = [observation_operator.LabelToIndex.pipe_label_to_index_dict[i] for i in edge]
-            plt.figure()
-            plt.semilogy(edges_list, p_y_given_c, '.')
-            plt.axvline(x=observation_operator.LabelToIndex.pipe_label_to_index_dict[true_leak_location], color='r')
-            plt.show()
-            pdb.set_trace()
-            '''
-
-
-
-            p_y_given_c = np.asarray(p_y_given_c)
-            #p_c = 1/p_y_given_c.shape[0]
-            p_y_given_c = p_y_given_c * p_c
-            p_c_given_y = p_y_given_c / np.sum(p_y_given_c)
-
-            p_c = p_c_given_y
-            print(np.max(p_c))
-            
-
-
-
-        if HMC:
-            log_map = [item['log_posterior'].item() for item in log_MAP]
-            std = [torch.norm(item['reconstruction_std']).item() for item in log_MAP]
-            log_MAP = log_map
-
-            std_case_list.append(std)
-
-
-        '''
-        for iter, i in enumerate(edges_list):
-    
-            pars = torch.tensor([[i]], dtype=torch.int32)
-            _, reconstruction = variational_inference.compute_variational_minimum(
-                    observations=observation_operator.get_observations(true_state),
-                    pars=pars,
-                    num_iterations=2500
-            )
-            #reconstruction = variational_inference.compute_encoder_decoder_reconstruction(
-            #        true_state=true_state.unsqueeze(0),
-            #        pars=pars,
-            #)
-            e = variational_inference.compute_relative_error(
-                    reconstruction[0],
-                    true_state
-            )
-    
-            error.append(e)
-    
-            print(f'Iteration {iter} of {len(edges_list)}')
-        '''
-
-        #log_MAP = np.exp(np.asarray(log_MAP))
-        log_MAP = p_c_given_y
-
-        n_largest_log_MAP = np.argsort(log_MAP)[-n:]
-        n_largest_log_MAP = [edges_list[i] for i in n_largest_log_MAP]
-        n_largest_log_MAP_label = [observation_operator.LabelToIndex.index_to_pipe_label_dict[leak_location_pred]\
-         for leak_location_pred in n_largest_log_MAP]
-
-        with_n_largest_log_MAP.append(true_leak_location in n_largest_log_MAP_label)
-
-        leak_location_pred = edges_list[np.argmax(log_MAP)]
-        leak_location_pred = observation_operator.LabelToIndex.index_to_pipe_label_dict[leak_location_pred]
-
-        correct_leak_location_pred.append(leak_location_pred == true_leak_location)
-
-        if plot:
-            vmin = np.min(head).min()
-            vmax = np.max(head).max()
-            edge_min = np.min(flow_rate)
-            edge_max = np.max(flow_rate)
-            log_MAP_min = np.min(log_MAP)
-            log_MAP_max = np.max(log_MAP)
-
-            node_cmap = plt.get_cmap('viridis')
-            edge_cmap = plt.get_cmap('Reds')
-            log_MAP_cmap = plt.get_cmap('Reds')
-
-            plt.figure(figsize=(10, 10))
-            for edges in G.edges:
-                if edges[-1] == true_leak_location:
-                    nx.draw_networkx_edge_labels(G=G, pos=pos,
-                                                 edge_labels={(edges[0], edges[1]): 'X'},
-                                                 font_color='tab:red', font_size=25,
-                                                 bbox={'alpha':0.0})
-                if edges[-1] == leak_location_pred:
-                    nx.draw_networkx_edge_labels(G=G, pos=pos,
-                                                edge_labels={(edges[0], edges[1]): 'X'},
-                                                 font_color='tab:green', font_size=20,
-                                                 bbox={'alpha':0.0})
-            
-            nx.draw_networkx(
-                G=G, pos=pos, 
-                edge_vmin=log_MAP_min, edge_vmax=log_MAP_max,
-                edge_color=log_MAP, edge_cmap=log_MAP_cmap, width=2,
-                node_size=10, node_color=head, #node_cmap=node_cmap,
-                with_labels=False
-                )
-            
-            node_sensor_labels = {node: 'O' for node in obs_node_labels}
-            nx.draw_networkx_labels(G=G, pos=pos,
-                                    labels=node_sensor_labels,
-                                    font_color='tab:blue', font_size=20)
-
-            error_dict = {}
-
-            for edges in G.edges:
-                for key in observation_operator.LabelToIndex.pipe_label_to_index_dict.keys():
-                    if key == edges[-1]:
-                        lol = f'{log_MAP[observation_operator.LabelToIndex.pipe_label_to_index_dict[key]]:0.1f}'
-                        error_dict[(edges[0], edges[1])] = lol
-
-            sm = plt.cm.ScalarMappable(cmap=log_MAP_cmap,
-                                       norm=plt.Normalize(vmin=log_MAP_min,vmax=log_MAP_max))
-            sm.set_array([])
-            cbar = plt.colorbar(sm)
-            cbar.set_label('P(c|y)', rotation=270, fontsize=20)
-
-            true_leak_string =  f'True leak Location: X'
-            pred_leak_string =  f'Predicted leak Location: X'
-            sendor_string = f'Sensor locations: O'
-            plt.text(5., 4., true_leak_string,  fontsize=14, color='tab:red')
-            plt.text(5., 2.5, pred_leak_string,  fontsize=14, color='tab:green')
-            plt.text(5., 1., sendor_string,  fontsize=14, color='tab:blue')
-
-            plt.savefig(f'AE_leak_detection_case_{case}_num_sensors_{len(obs_node_labels)}.pdf')
-
-            plt.show()
-
-        counter += 1
-
-        accuracy = np.sum(correct_leak_location_pred) / len(correct_leak_location_pred)
-        within_n_largest = np.sum(with_n_largest_log_MAP)/len(with_n_largest_log_MAP)
-
-        print(f'Case {counter} of {len(case_list)} done')
-        print(f'Accuracy: {accuracy:0.2f}')
-        print(f'Within {n} largest log MAP: {within_n_largest:0.2f}')
-
-    t2 = time.time()
-
-    print(f'Time taken: {t2-t1:0.2f}')
-
-    accuracy = np.sum(correct_leak_location_pred)/len(correct_leak_location_pred)
-    within_n_largest = np.sum(with_n_largest_log_MAP)/len(with_n_largest_log_MAP)
-    print(f'Accuracy: {accuracy:0.2f}')
-    print(f'Within {n} largest log MAP: {within_n_largest:0.2f}')
 

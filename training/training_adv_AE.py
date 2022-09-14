@@ -14,8 +14,10 @@ class TrainAdversarialAE():
                  encoder_optimizer, decoder_optimizer,
                  critic_optimizer,
                  with_adversarial_training,
+                 critic_regu=1e-1,
                  latent_dim=32, n_critic=5, gamma=10, save_string='AdvAE',
                  n_epochs=100, L1_regu=None,
+                 wasserstein=False,
                  device='cpu'):
 
         self.device = device
@@ -25,6 +27,9 @@ class TrainAdversarialAE():
         self.enc_opt = encoder_optimizer
         self.dec_opt = decoder_optimizer
         self.cri_opt = critic_optimizer
+        self.critic_regu = critic_regu
+        self.wasserstein = wasserstein
+
         scheduler_step_size = 5
         scheduler_gamma = 0.95
 
@@ -229,11 +234,19 @@ class TrainAdversarialAE():
         critic_real = self.critic(true_latent_data)
         critic_generated = self.critic(generated_latent_data)
 
-        target_real = torch.ones_like(critic_real)
-        target_generated = torch.zeros_like(critic_generated)
 
-        cri_loss = 0.5 * self.critic_loss_function(critic_real, target_real) \
-                   + 0.5 * self.critic_loss_function(critic_generated, target_generated)
+        if self.wasserstein:
+            gp = self.gradient_penalty(
+                    data=true_latent_data,
+                    generated_data=generated_latent_data
+            )
+            cri_loss = -torch.mean(critic_real) + torch.mean(critic_generated) + gp
+        else:
+            target_real = torch.ones_like(critic_real)
+            target_generated = torch.zeros_like(critic_generated)
+
+            cri_loss = 0.5 * self.critic_loss_function(critic_real, target_real) \
+                    + 0.5 * self.critic_loss_function(critic_generated, target_generated)
 
         cri_loss.backward()
         self.cri_opt.step()
@@ -259,11 +272,16 @@ class TrainAdversarialAE():
 
         if self.with_adversarial_training:
             # Compute critic loss
-            loss_critic = self.critic_loss_function(
-                    self.critic(real_latent),
-                    torch.ones_like(self.critic(real_latent))
-            )
-            loss = loss + 1e-3*loss_critic
+
+            if self.wasserstein:
+                loss_critic = -torch.mean(self.critic(real_latent))
+
+            else:
+                loss_critic = self.critic_loss_function(
+                        self.critic(real_latent),
+                        torch.ones_like(self.critic(real_latent))
+                )
+            loss = loss + self.critic_regu*loss_critic
 
         # Decode state
         #decoder_input = torch.cat([real_latent, real_pars], dim=1)

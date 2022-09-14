@@ -8,9 +8,53 @@ import torch
 import hamiltorch as ht
 import sys
 import os
+import ray
 from torchquad import MonteCarlo, set_up_backend
 
 #set_up_backend("torch", data_type="float32")
+
+
+@ray.remote
+def compute_reconstruction_error(
+        leak_location,
+        true_state,
+        variational_inference,
+        variational_minumum=True,
+        HMC=False
+    ):
+
+    pars = torch.tensor([[leak_location]], dtype=torch.int64)
+
+    if HMC:
+        reconstruction, reconstruction_std, latent_state, latent_std = \
+            variational_inference.compute_HMC_statistics(
+                observations=observation_operator.get_observations(true_state),
+                pars=torch.tensor([[i]], dtype=torch.int64),
+                num_samples=1000,
+        )
+        reconstruction = reconstruction.unsqueeze(0)
+        reconstruction_std = reconstruction_std.unsqueeze(0)
+        latent_state = latent_state.unsqueeze(0)
+
+    else:
+        if variational_minumum:
+            latent_state, reconstruction = variational_inference.compute_variational_minimum(
+                    observations=observation_operator.get_observations(true_state),
+                    pars=pars,
+                    num_iterations=2500
+            )
+        else:
+            latent_state, reconstruction = variational_inference.compute_encoder_decoder_reconstruction(
+                    true_state=true_state.unsqueeze(0),
+                    pars=pars,
+            )
+
+    log_posterior = variational_inference.log_posterior(
+            observations=observation_operator.get_observations(true_state),
+            predicted_observations=observation_operator.get_observations(reconstruction[0]),
+            latent_state=latent_state
+    )
+
 
 # Disable
 def blockPrint():
@@ -19,6 +63,35 @@ def blockPrint():
 # Restore
 def enablePrint():
     sys.stdout = sys.__stdout__
+
+class ImportanceSampling():
+    def __init__(
+            self,
+    ):
+
+        self.prior = torch.distributions.MultivariateNormal(
+                loc=torch.zeros(10),
+                covariance_matrix=torch.eye(10)
+            )
+
+    def integrate(self, integrand_fun, dim=10, N=10, seed=1, ):
+
+        self.prior = torch.distributions.MultivariateNormal(
+                loc=torch.zeros(dim),
+                covariance_matrix=torch.eye(dim)
+            )
+        
+        sample_values = self.prior.sample((N,))
+        log_prob = self.prior.log_prob(sample_values)
+        prob = torch.exp(log_prob).unsqueeze(1)
+
+        integrand_values = integrand_fun(sample_values)
+
+        integral = torch.sum(integrand_values / prob, dim=0) / N
+
+        return integral
+
+
 
 
 
@@ -67,29 +140,30 @@ class VariationalInference():
             num_samples=10000,
         ):
 
-        mc = MonteCarlo()
+        #mc = MonteCarlo()
+        mc = ImportanceSampling()
 
 
         # Compute the function integral by sampling 10000 points over domain
         p_y_given_c = 0
-        for i in range(100):
+        for i in range(10):
 
             integrand_fun = lambda z: self.integrand(
                     observations=observations,
                     latent_state=z,
-                    pars=pars.repeat(num_samples//100, 1)
+                    pars=pars.repeat(num_samples//10, 1)
             )
 
             p_y_given_c += mc.integrate(
                     integrand_fun,
                     dim=self.latent_dim,
-                    N=num_samples//100,
-                    integration_domain=[[-2., 2.]] * self.latent_dim,
+                    N=num_samples//10,
+                    #integration_domain=[[-2., 2.]] * self.latent_dim,
                     seed=i,
-                    backend="torch",
+                    #backend="torch",
             ).detach().item()
 
-        return p_y_given_c/100
+        return p_y_given_c/10
 
 
     def compute_HMC_statistics(
