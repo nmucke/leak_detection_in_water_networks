@@ -86,6 +86,5 @@ if __name__ == "__main__":
      graph_encoder = graph_autoencoder.GraphEncoder(**graph_encoder_params)
      graph_decoder = graph_autoencoder.GraphDecoder(**graph_decoder_params)
 
-
      lol = graph_encoder(X)
      lol2 = graph_decoder(lol)

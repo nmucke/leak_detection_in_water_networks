@@ -40,16 +40,16 @@ if __name__ == "__main__":
     print(f'Training AdvAE on {device}')
 
     convergence_plot = True
-    convergence_latent = [12]
+    convergence_latent = [16]
 
-    latent_dim = 12
+    latent_dim = 16
 
     critic_regu = 1e0
     probability_cost = 'MMD'
     with_time = True
 
     save_model = True
-    save_path = f'models_for_inference/AE_net2_latent{latent_dim}_critic_regu{critic_regu}_{probability_cost}'
+    save_path = f'models_for_inference/AE_net3_latent{latent_dim}_critic_regu{critic_regu}_{probability_cost}'
 
     if not with_time:
         save_path += '_no_time'
@@ -62,18 +62,19 @@ if __name__ == "__main__":
     if not train:
         continue_training = True
 
-    data_path = 'data/dynamic_net_2/training_data_with_leak/network_'
-    load_string = f'model_weights/AE_net2_latent{latent_dim}_{probability_cost}'
-    save_string = f'model_weights/AE_net2_latent{latent_dim}_{probability_cost}'
+    data_path = 'data/dynamic_net_3/training_data_with_leak/network_'
+    load_string = f'model_weights/AE_net3_latent{latent_dim}_{probability_cost}'
+    save_string = f'model_weights/AE_net3_latent{latent_dim}_{probability_cost}'
 
     if not with_time:
         load_string += '_no_time'
         save_string += '_no_time'
 
-    transformer_load_path = 'net2_network_transformer.pkl'
+    transformer_load_path = 'net3_network_transformer.pkl'
 
-    num_pipe_sections = 119
-    num_pipe_nodes = 97
+    num_pipe_sections = 444
+    num_pipe_nodes = 396
+
     activation = nn.LeakyReLU()
 
     with open(transformer_load_path, 'rb') as pickle_file:
@@ -82,16 +83,16 @@ if __name__ == "__main__":
 
     dataset_params = {
         'data_path': data_path,
-        'file_ids': range(18000),
+        'file_ids': range(27000),
         'transformer': transformer,
         'sensors': None,
         'with_time': with_time 
     }
     val_dataset_params = {
         'data_path': data_path,
-         'file_ids': range(18000, 20000),
-         'transformer': transformer,
-         'sensors': None,
+        'file_ids': range(27000, 30000),
+        'transformer': transformer,
+        'sensors': None,
         'with_time': with_time 
     }
     dataset = NetworkDataset(**dataset_params)
@@ -116,13 +117,13 @@ if __name__ == "__main__":
     encoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [128, 64, 32],
+        'hidden_neurons': [256, 128, 64],
     }
 
     decoder_params = {
         'state_dim': state_dim,
         'latent_dim': latent_dim,
-        'hidden_neurons': [32, 64, 128],
+        'hidden_neurons': [64, 128, 256],
         'pars_dim': par_dim,
         'pars_embedding_dim': latent_dim,
     }
@@ -211,7 +212,7 @@ if __name__ == "__main__":
 
 
     ##### Convergence #####
-    data_path = 'data/dynamic_net_2/test_data_with_leak/network_'
+    data_path = 'data/dynamic_net_3/test_data_with_leak/network_'
 
     dataset_params = {
         'data_path': data_path,
@@ -237,12 +238,10 @@ if __name__ == "__main__":
                 latent_moment_error = []
                 for latent_dim in convergence_latent:
 
-                    load_string = 'models_for_inference/AE_net2_latent' + str(latent_dim) + '_critic_regu' + str(critic_regu)
+                    load_string = f'models_for_inference/AE_net3_latent{latent_dim}_critic_regu{critic_regu}_{probability_cost}'
 
                     if not with_time:
                         load_string += '_no_time'
-
-                    load_string += f'_{probability_cost}'
 
                     recon_loss = []
                     latent_states = []

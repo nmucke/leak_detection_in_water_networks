@@ -81,12 +81,19 @@ class Decoder(nn.Module):
         self.latent_dim = latent_dim
         self.pars_dim = pars_dim
 
+        if len(pars_dim) == 1:
+            pars_embedding_dim = [pars_embedding_dim]
+        elif len(pars_dim) == 2:
+            pars_embedding_dim = [pars_embedding_dim, pars_embedding_dim//4]
+
+        total_pars_embedding_dim = sum(pars_embedding_dim)
+
         self.pars_embedding_layers = nn.ModuleList()
         for i in range(len(self.pars_dim)):
             self.pars_embedding_layers.append(
                 nn.Embedding(
                     num_embeddings=pars_dim[i],
-                    embedding_dim=pars_embedding_dim
+                    embedding_dim=pars_embedding_dim[i]
                 )
             )
 
@@ -94,7 +101,7 @@ class Decoder(nn.Module):
                               out_features=self.hidden_neurons[0])
         self.batch_norm_in = nn.BatchNorm1d(self.hidden_neurons[0])
 
-        self.hidden_neurons[0] += pars_embedding_dim * len(self.pars_dim)
+        self.hidden_neurons[0] += total_pars_embedding_dim# * len(self.pars_dim)
         self.dense_layers = nn.ModuleList(
                 [nn.Linear(
                         in_features=hidden_neurons[i],
@@ -133,12 +140,13 @@ class Decoder(nn.Module):
         return x
 
 class Critic(nn.Module):
-    def __init__(self, latent_dim=32, hidden_neurons=[]):
+    def __init__(self, latent_dim=32, hidden_neurons=[], wasserstein=False):
         super().__init__()
 
         self.activation = nn.Tanh()
         self.sigmoid = nn.Sigmoid()
         self.hidden_neurons = hidden_neurons
+        self.wasserstein = wasserstein 
 
         self.dense_in = nn.Linear(in_features=latent_dim,
                               out_features=self.hidden_neurons[0])
@@ -164,7 +172,11 @@ class Critic(nn.Module):
             x = self.activation(x)
 
         x = self.dense_out(x)
-        return x#self.sigmoid(x)
+
+        if self.wasserstein:
+            return x
+        else:
+            return self.sigmoid(x)
 
 class AutoEncoder():
     def __init__(self, latent_dim=32, input_dim=128,

@@ -30,7 +30,6 @@ class ObservationOperator():
                              for key in self.node_observations_labels]
 
     def get_observations(self, state):
-
         if len(state.shape) == 1:
             flow_rate = state[0:self.num_pipes]
             head = state[self.num_pipes:self.num_pipes+self.num_nodes]

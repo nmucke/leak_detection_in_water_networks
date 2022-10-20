@@ -8,6 +8,50 @@ import torch
 from tqdm import tqdm
 import copy
 
+def MMD(x, y, kernel, device):
+    """Emprical maximum mean discrepancy. The lower the result, the more evidence that distributions are the same.
+
+    Args:
+        x: first sample, distribution P
+        y: second sample, distribution Q
+        kernel: kernel type such as "multiscale" or "rbf"
+    """
+    xx, yy, zz = torch.mm(x, x.t()), torch.mm(y, y.t()), torch.mm(x, y.t())
+    rx = (xx.diag().unsqueeze(0).expand_as(xx))
+    ry = (yy.diag().unsqueeze(0).expand_as(yy))
+
+    dxx = rx.t() + rx - 2. * xx # Used for A in (1)
+    dyy = ry.t() + ry - 2. * yy # Used for B in (1)
+    dxy = rx.t() + ry - 2. * zz # Used for C in (1)
+    
+    XX, YY, XY = (torch.zeros(xx.shape).to(device),
+                  torch.zeros(xx.shape).to(device),
+                  torch.zeros(xx.shape).to(device))
+    
+    if kernel == "multiscale":
+        
+        '''
+        bandwidth_range = [0.2, 0.5, 0.9, 1.3]
+        for a in bandwidth_range:
+            XX += a**2 * (a**2 + dxx)**-1
+            YY += a**2 * (a**2 + dyy)**-1
+            XY += a**2 * (a**2 + dxy)**-1
+        '''
+        C = 2*x.shape[-1]*1
+        XX += C * (C + dxx)**-1
+        YY += C * (C + dyy)**-1
+        XY += C * (C + dxy)**-1
+            
+    if kernel == "rbf":
+      
+        bandwidth_range = [10, 15, 20, 50]
+        for a in bandwidth_range:
+            XX += torch.exp(-0.5*dxx/a)
+            YY += torch.exp(-0.5*dyy/a)
+            XY += torch.exp(-0.5*dxy/a)
+
+    return torch.mean(XX + YY - 2. * XY)
+
 
 class TrainAdversarialAE():
     def __init__(self, encoder, decoder, critic,
@@ -17,7 +61,7 @@ class TrainAdversarialAE():
                  critic_regu=1e-1,
                  latent_dim=32, n_critic=5, gamma=10, save_string='AdvAE',
                  n_epochs=100, L1_regu=None,
-                 wasserstein=False,
+                 probability_cost='wasserstein',
                  device='cpu'):
 
         self.device = device
@@ -28,7 +72,7 @@ class TrainAdversarialAE():
         self.dec_opt = decoder_optimizer
         self.cri_opt = critic_optimizer
         self.critic_regu = critic_regu
-        self.wasserstein = wasserstein
+        self.probability_cost = probability_cost
 
         scheduler_step_size = 5
         scheduler_gamma = 0.95
@@ -112,8 +156,11 @@ class TrainAdversarialAE():
 
 
             if val_dataloader is not None:
-                val_loss = self.compute_val_loss(val_dataloader)
-                print(f'val loss: {val_loss:0.5f}')
+                val_loss, MMD_loss = self.compute_val_loss(val_dataloader)
+                if self.probability_cost == 'MMD':
+                    print(f'val loss: {val_loss:0.5f}, MMD loss: {MMD_loss:0.5f}')
+                else:
+                    print(f'val loss: {val_loss:0.5f}')
 
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
@@ -167,6 +214,7 @@ class TrainAdversarialAE():
                 bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}'
         )
         recon_loss = 0
+        critic_loss = 0
         for bidx, (real_state, real_pars) in pbar:
             self.iii = bidx
 
@@ -188,24 +236,42 @@ class TrainAdversarialAE():
             real_pars = real_pars.to(self.device)
 
 
-            if self.with_adversarial_training:
+            if self.probability_cost == 'MMD':
+                '''
+                gen_latent = self.encoder(real_state)
+                real_latent = self.sample(batch_size*num_steps)
+                loss_critic = MMD(
+                    x=gen_latent, 
+                    y=real_latent, 
+                    kernel='multiscale',   
+                    device=self.device
+                    )
+                '''
+                cri_loss = 0#loss_critic.detach().item()
+            else:
                 self.encoder.eval()
-                critic_loss, gp = self.critic_train_step(
+                cri_loss, gp = self.critic_train_step(
                         state=real_state,
                         pars=real_pars
                 )
                 self.encoder.train()
+            critic_loss += cri_loss
+
+            if self.probability_cost == 'wasserstein':
+                if bidx % self.n_critic == 0:
+                    self.critic.eval()
+                    recon_loss += self.train_step(
+                            real_state=real_state,
+                            real_pars=real_pars
+                    )
+                    self.critic.train()
             else:
-                critic_loss = 0
-
-
-            #if bidx % self.n_critic == 0:
-            self.critic.eval()
-            recon_loss += self.train_step(
-                    real_state=real_state,
-                    real_pars=real_pars
-            )
-            self.critic.train()
+                self.critic.eval()
+                recon_loss += self.train_step(
+                        real_state=real_state,
+                        real_pars=real_pars
+                )
+                self.critic.train()
 
             pbar.set_postfix({
                     'recon_loss': recon_loss/(bidx+1),
@@ -216,7 +282,7 @@ class TrainAdversarialAE():
 
         self.enc_opt_scheduler.step()
         self.dec_opt_scheduler.step()
-        if self.with_adversarial_training:
+        if self.probability_cost != 'MMD':
             self.cri_opt_scheduler.step()
 
         return recon_loss/(bidx+1), 1, 1,1#enc_loss, gp
@@ -235,13 +301,13 @@ class TrainAdversarialAE():
         critic_generated = self.critic(generated_latent_data)
 
 
-        if self.wasserstein:
+        if self.probability_cost == 'wasserstein':
             gp = self.gradient_penalty(
                     data=true_latent_data,
                     generated_data=generated_latent_data
             )
             cri_loss = -torch.mean(critic_real) + torch.mean(critic_generated) + gp
-        else:
+        elif self.probability_cost == 'log':
             target_real = torch.ones_like(critic_real)
             target_generated = torch.zeros_like(critic_generated)
 
@@ -266,26 +332,34 @@ class TrainAdversarialAE():
     def train_step(self, real_state, real_pars):
 
         # Encode state
-        real_latent = self.encoder(real_state)
+        gen_latent = self.encoder(real_state)
+        real_latent = self.sample(real_state.size(0))
 
         loss = 0
 
         if self.with_adversarial_training:
             # Compute critic loss
 
-            if self.wasserstein:
-                loss_critic = -torch.mean(self.critic(real_latent))
+            if self.probability_cost == 'wasserstein':
+                loss_critic = -torch.mean(self.critic(gen_latent))
 
-            else:
+            elif self.probability_cost == 'log':
                 loss_critic = self.critic_loss_function(
-                        self.critic(real_latent),
-                        torch.ones_like(self.critic(real_latent))
+                        self.critic(gen_latent),
+                        torch.ones_like(self.critic(gen_latent))
                 )
+            elif self.probability_cost == 'MMD':
+                loss_critic = MMD(
+                    x=gen_latent, 
+                    y=real_latent, 
+                    kernel='multiscale',   
+                    device=self.device
+                    )
             loss = loss + self.critic_regu*loss_critic
 
         # Decode state
         #decoder_input = torch.cat([real_latent, real_pars], dim=1)
-        state_recon = self.decoder(real_latent, real_pars)
+        state_recon = self.decoder(gen_latent, real_pars)
 
         # Compute reconstruction loss
         loss_recon = self.reconstruction_loss_function(state_recon, real_state)
@@ -305,6 +379,7 @@ class TrainAdversarialAE():
         self.enc_opt.zero_grad()
         self.dec_opt.zero_grad()
         loss.backward()
+        
 
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), 0.1)
         torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), 0.1)
@@ -342,12 +417,17 @@ class TrainAdversarialAE():
     def sample(self, n_samples):
         """Generate n_samples fake samples"""
         return torch.randn(n_samples, self.latent_dim).to(self.device)
+    
+    def compute_MMD_loss(self, real_latent, fake_latent):
+        """Compute MMD loss"""
+        return self.mmd_loss(real_latent, fake_latent)
 
     def compute_val_loss(self, val_dataloader):
         """Compute validation loss"""
         self.encoder.eval()
         self.decoder.eval()
         val_loss = 0
+        val_MMD_loss = 0
         for batch_idx, (state, pars) in enumerate(val_dataloader):
 
             batch_size = state.size(0)
@@ -366,8 +446,18 @@ class TrainAdversarialAE():
 
             state = state.to(self.device)
             pars = pars.to(self.device)
+            gen_latent = self.encoder(state)
             val_loss += self.reconstruction_loss_function(
-                    self.decoder(self.encoder(state), pars), state).detach().item()
+                    self.decoder(gen_latent, pars), state).detach().item()
+            
+            if self.probability_cost == 'MMD':
+                real_latent = self.sample(batch_size*num_steps)
+                val_MMD_loss += MMD(
+                    x=gen_latent, 
+                    y=real_latent, 
+                    kernel='multiscale',   
+                    device=self.device
+                    ).detach().item()
         self.encoder.train()
         self.decoder.train()
-        return val_loss/(batch_idx+1)
+        return val_loss/(batch_idx+1), val_MMD_loss/(batch_idx+1)

@@ -13,12 +13,12 @@ import pickle
 
 if __name__ == "__main__":
 
-    data_path = 'data/dynamic_net_2/training_data_with_leak/network_'
-    save_path = 'medium_network_transformer'
+    data_path = 'data/dynamic_net_3/training_data_with_leak/network_'
+    save_path = 'net3_network_transformer'
 
     dataset_params = {
         'data_path': data_path,
-         'file_ids': range(5000),
+         'file_ids': range(27000),
          'transformer': None,#transformer,
          'sensors': None
     }
@@ -34,6 +34,7 @@ if __name__ == "__main__":
 
 
     data_dict = nx.read_gpickle(data_path + str(0))
+
     transformer_state = StateTransformer(
             num_pipes=len(data_dict['flow_rate'].columns),
             num_nodes=len(data_dict['head'].columns)

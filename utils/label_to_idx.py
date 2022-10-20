@@ -22,7 +22,6 @@ class LabelToIndex():
         self.node_label_to_index_dict = self.node_label_to_index()
         self.index_to_node_label_dict = self.index_to_node_label()
 
-
     def pipe_label_to_index(self):
 
         pipe_index = [self.pipe_labels.index(pipe) for pipe in self.pipe_labels]
@@ -37,7 +36,6 @@ class LabelToIndex():
         index_to_pipe_label_dict = dict(zip(pipe_index, pipe_labels))
 
         return index_to_pipe_label_dict
-
 
     def node_label_to_index(self):
 

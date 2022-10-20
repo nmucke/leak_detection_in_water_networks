@@ -1,6 +1,7 @@
 from email.mime import base
 import pdb
 from re import S
+from unittest import TextTestRunner
 
 import numpy as np
 import os
@@ -10,10 +11,12 @@ import copy
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import newton, curve_fit
+import torch
+import ray
 
 def get_demand_time_series_noise(t_start, t_end, t_step, base_value):
 
-    noise_std =  5e-2*base_value
+    noise_std =  1e-1*base_value
     demand_noise = np.random.normal(
         loc=0,
         scale=noise_std, 
@@ -22,6 +25,7 @@ def get_demand_time_series_noise(t_start, t_end, t_step, base_value):
     return demand_noise
 
 
+@ray.remote
 def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
 
     #wn.options.time.report_timestep = wn.options.time.report_timestep/10
@@ -68,8 +72,8 @@ def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
     results = sim.run_sim()
 
     '''
-    nodes = ['101', '121', '259']
-    links = ['20', '40', '50']
+    nodes = ['J416', 'J306', 'J315']
+    links = ['P1016', 'P1028', 'PU6']
     
     plt.figure(figsize=(24,8))
     plt.subplot(1,3,1)
@@ -91,6 +95,7 @@ def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
     plt.title('Demand')
     plt.legend()
     plt.show()
+    pdb.set_trace()
     '''
 
     G = wn.get_graph()
@@ -118,26 +123,42 @@ def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
         pos[i] = nx.get_node_attributes(G, 'pos')[key]
     pdb.set_trace()
     '''
-
+    
     if leak is not None:
-        result_dict = {'WNTR_results': results,
+        result_dict = {#'WNTR_results': results,
                        'graph': G,
                        'head': head_df,
                        'demand': demand_df,
                        'flow_rate': flowrate_df,
                        'leak': leak}
     else:
-        result_dict = {'WNTR_results': results,
+        result_dict = {#'WNTR_results': results,
                        'graph': G,
                        'head': head_df,
                        'demand': demand_df,
                        'flow_rate': flowrate_df}
 
+    nx.write_gpickle(result_dict, f'{data_save_path}{id}')
+
+    print(id)
     return result_dict
 
 
 if __name__ == "__main__":
 
+    '''
+    for i in range(0, 1000):
+        data_path = 'data/dynamic_net_3/test_data_with_leak/network_'
+        data_dict = nx.read_gpickle(data_path + str(i))
+
+
+
+        flow_rate = torch.tensor(data_dict['flow_rate'].values)
+
+        if flow_rate.shape[0] < 169:
+            print(i, end=", ")
+    pdb.set_trace()
+    '''
 
     net = 2
     train_data = True
@@ -171,23 +192,29 @@ if __name__ == "__main__":
     num_links = len(link_list)
 
     pump_list = wn.pump_name_list
-    link_list = [link for link in link_list if link not in pump_list]
-
+    valve_list = wn.valve_name_list
+    link_list = [link for link in link_list if link not in pump_list + valve_list]
+    
+    #sample_ids = [700, 708, 801, 938]
+    
+    ray.init(num_cpus=6)
     sample_ids = range(10000, num_samples)
     if with_leak:
         leak_pipes_id = np.random.randint(low=1, high=len(link_list), size=num_samples)
         leak_pipes = [link_list[i] for i in leak_pipes_id]
         leak_areas = np.random.uniform(low=0.005, high=0.015, size=num_samples)
         for id, leak_pipe, leak_area in zip(sample_ids, leak_pipes, leak_areas):
-            result_dict_leak = simulate_WDN(
+            result_dict_leak = simulate_WDN.remote(
                 inp_file=inp_file,
                 leak={'pipe': leak_pipe,
                       'area': leak_area},
+                id=id,
+                data_save_path=data_save_path
                 )
-            nx.write_gpickle(result_dict_leak, f'{data_save_path}{id}')
+            #nx.write_gpickle(result_dict_leak, f'{data_save_path}{id}')
 
-            if id % 100 == 0:
-                print(id)
+            #if id % 100 == 0:
+            #    print(id)
 
     else:
         for id in sample_ids:

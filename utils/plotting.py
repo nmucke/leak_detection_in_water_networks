@@ -12,7 +12,8 @@ def plot_leak_results(
     pos,
     observation_operator,
     obs_node_labels,
-    case
+    case,
+    entropy=None
 ):
     vmin = np.min(head).min()
     vmax = np.max(head).max()
@@ -26,19 +27,6 @@ def plot_leak_results(
     p_c_given_y_cmap = plt.get_cmap('Reds')
 
     plt.figure(figsize=(10, 10))
-    for edges in G.edges:
-        if edges[-1] == true_leak_location:
-            nx.draw_networkx_edge_labels(
-                G=G, pos=pos,
-                edge_labels={(edges[0], edges[1]): 'X'},
-                font_color='tab:red', font_size=25,
-                bbox={'alpha':0.0})
-        if edges[-1] == leak_location_pred:
-            nx.draw_networkx_edge_labels(
-                G=G, pos=pos,
-                edge_labels={(edges[0], edges[1]): 'X'},
-                font_color='tab:green', font_size=20,
-                bbox={'alpha':0.0})
     
     nx.draw_networkx(
         G=G, pos=pos, 
@@ -68,12 +56,30 @@ def plot_leak_results(
     cbar = plt.colorbar(sm)
     cbar.set_label('P(c|y)', rotation=270, fontsize=20)
 
+
+    for edges in G.edges:
+        if edges[-1] == true_leak_location:
+            nx.draw_networkx_edge_labels(
+                G=G, pos=pos,
+                edge_labels={(edges[0], edges[1]): 'X'},
+                font_color='tab:red', font_size=25,
+                bbox={'alpha':0.0})
+        if edges[-1] == leak_location_pred:
+            nx.draw_networkx_edge_labels(
+                G=G, pos=pos,
+                edge_labels={(edges[0], edges[1]): 'X'},
+                font_color='tab:green', font_size=20,
+                bbox={'alpha':0.0})
+
     true_leak_string =  f'True leak Location: X'
     pred_leak_string =  f'Predicted leak Location: X'
     sendor_string = f'Sensor locations: O'
     plt.text(5., 4., true_leak_string,  fontsize=14, color='tab:red')
     plt.text(5., 2.5, pred_leak_string,  fontsize=14, color='tab:green')
     plt.text(5., 1., sendor_string,  fontsize=14, color='tab:blue')
+
+    if entropy is not None:
+        plt.title(f'Case {case}: Entropy = {entropy:0.2f}')
 
     plt.savefig(f'AE_leak_detection_case_{case}_num_sensors_{len(obs_node_labels)}.pdf')
     plt.show()
