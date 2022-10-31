@@ -48,6 +48,18 @@ class LeakLocalization():
                 encoder=encoder,
         )
     
+    def update_obs_labels(self, obs_pipe_labels, obs_node_labels):
+        self.obs_pipe_labels = obs_pipe_labels
+        self.obs_node_labels = obs_node_labels
+        self.observation_operator = ObservationOperator(
+            pipe_labels=self.pipe_labels,
+            node_labels=self.node_labels,
+            pipe_observation_labels=obs_pipe_labels,
+            node_observations_labels=obs_node_labels
+        )
+        self.label_to_index = self.observation_operator.LabelToIndex
+        self.bayesian_inference.observation_operator = self.observation_operator
+    
     def get_topological_distance(self, G, true_leak_location, pred_leak_location):
         if true_leak_location == pred_leak_location:
             return 0
@@ -169,6 +181,8 @@ class LeakLocalization():
 
             t_idx += 1
             t_idx = t_idx % 24
+
+            num_t_steps += 1
 
         n_largest_p_c_given_y = np.argsort(p_c_given_y)[-n_largest:]
         n_largest_p_c_given_y = [edges_list[i] for i in n_largest_p_c_given_y]

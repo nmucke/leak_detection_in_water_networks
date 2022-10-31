@@ -2,3 +2,5 @@ data/
 model_weights/
 models_for_inference/
 figures/
+figures_net2/
+figures_net3/

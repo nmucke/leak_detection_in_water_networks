@@ -28,9 +28,9 @@ if __name__ == "__main__":
 
     seed_everything()
 
-    net = '2'
+    net = '3'
 
-    latent_dim = 12
+    latent_dim = 16
     critic_regu = 1e0#1e-3
     with_time = True
     probability_cost = 'MMD'
@@ -59,12 +59,11 @@ if __name__ == "__main__":
     transformer_load_path = f'net{net}_network_transformer.pkl'
     with open(transformer_load_path, 'rb') as pickle_file:
         transformer = pickle.load(pickle_file)
-
     plot = False
     case_list = range(0, 100)
     counter = 0
     
-    ray.init(num_cpus=6)
+    ray.init(num_cpus=3)
 
     data_path = f'data/dynamic_net_{net}/test_data_with_leak/network_'
 
@@ -80,7 +79,7 @@ if __name__ == "__main__":
 
     # Sensor location
     obs_pipe_labels = []#list(data_dict['flow_rate'].columns)[0:-1:5]
-    obs_node_labels = ['143', '117', '193', '181', '213', '237', '151', '101', '275']#['143', '117', '181', '213']#['143', '117', '193', '181', '213', '237']#['J91', 'J61', 'J252', 'J309', 'J291', 'J226', 'J429', 'J360', 'J1058', 'J155']#list(data_dict['head'].columns)[0:-1:20]#
+    obs_node_labels = ['J91', 'J61', 'J252', 'J309', 'J291', 'J226', 'J429', 'J360', 'J1058', 'J155']#['143', '117', '193', '181', '213', '237', '151', '101', '275']#['143', '117', '181', '213']#['143', '117', '193', '181', '213', '237']##list(data_dict['head'].columns)[0:-1:20]#
 
     leak_localization = LeakLocalization(
         decoder=decoder,
@@ -104,12 +103,12 @@ if __name__ == "__main__":
             data_path=data_path + str(case), 
             t_start=np.random.randint(0, 24),
             entropy_threshold=entropy_threshold, 
-            max_t_steps=3,
+            max_t_steps=7,
             n_largest=10,
             noise_std=0.01,
             case=case,
             plot=plot,
-            num_samples=2000,
+            num_samples=3000,
             integration_method='importance_sampling'
             )
 

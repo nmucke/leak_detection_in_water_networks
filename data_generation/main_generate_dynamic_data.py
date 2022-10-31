@@ -25,7 +25,7 @@ def get_demand_time_series_noise(t_start, t_end, t_step, base_value):
     return demand_noise
 
 
-@ray.remote
+#@ray.remote
 def simulate_WDN(inp_file, leak=None, data_save_path=None, id=0):
 
     #wn.options.time.report_timestep = wn.options.time.report_timestep/10
@@ -204,7 +204,8 @@ if __name__ == "__main__":
         leak_pipes = [link_list[i] for i in leak_pipes_id]
         leak_areas = np.random.uniform(low=0.005, high=0.015, size=num_samples)
         for id, leak_pipe, leak_area in zip(sample_ids, leak_pipes, leak_areas):
-            result_dict_leak = simulate_WDN.remote(
+            #result_dict_leak = simulate_WDN.remote(
+            result_dict_leak = simulate_WDN(
                 inp_file=inp_file,
                 leak={'pipe': leak_pipe,
                       'area': leak_area},
